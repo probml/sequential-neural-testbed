@@ -1,27 +1,44 @@
 import jax.numpy as jnp
-from jax import nn, vmap, random, lax
+from jax import nn, vmap, random
 from jax.scipy.special import logsumexp
 
 import distrax
 
 import chex
+import typing_extensions
 from typing import NamedTuple, Tuple, Callable
 
+
+
+AgentInitFn = Callable
 BeliefState = NamedTuple
 Info = NamedTuple
-AgentInitFn = Callable
+Params = chex.ArrayTree
 SampleFn = Callable
+ModelFn = Callable
 
 
-def gauss_moment_matching(mu: chex.Array) -> Tuple[chex.Array, chex.Array]:
-    # m = E[Y] = E_theta[ E[Y|theta] ] ~ 1/S sum_s mu(s)
-    # m2 = E[Y^2  ] = E_theta[ E[Y^2| theta] ]  ~ m^2
-    # v = V[Y ]  = E[Y^2]  - (E[Y]])^2 ~ m - m^2
-    m = jnp.mean(mu, axis=0)
-    m2 = jnp.mean(mu ** 2, axis=0)
-    v = m - m2
-    return m, v
+class ModelFn(typing_extensions.Protocol):
+    def __call__(self,
+                 params: chex.Array,
+                 x: chex.Array):
+        ...
 
+class LoglikelihoodFn(typing_extensions.Protocol):
+
+    def __call__(self,
+                 params: Params,
+                 x: chex.Array,
+                 y: chex.Array,
+                 model_fn: ModelFn):
+        ...
+
+
+class LogpriorFn(typing_extensions.Protocol):
+
+    def __call__(self,
+                 params: Params):
+        ...
 
 class Agent:
     '''
@@ -30,6 +47,7 @@ class Agent:
 
     def __init__(self,
                  is_classifier: bool):
+        
         self.is_classifier = is_classifier
 
         if is_classifier:
@@ -42,34 +60,37 @@ class Agent:
                belief: BeliefState,
                x: chex.Array,
                y: chex.Array) -> Tuple[BeliefState, Info]:
+        '''
+        Update the belief state given the training data.
+        '''
         pass
 
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState) -> chex.Array:
+        '''
+        Sample parameters given the belief state.
+        '''
         pass
 
     def predict_given_params_regression(self,
                                         params: chex.ArrayTree,
                                         x: chex.Array):
-        # regression with C outputs (independent)
-
-        # n test examples, dimensionality of input
+        # Regression with C outputs (independent)
 
         mu = self.model_fn(params, x)
 
         # n test examples, dimensionality of output
-        N, C = jnp.shape(mu)
+        ntest, output_dim = jnp.shape(mu)
         pred_dist = distrax.MultivariateNormalDiag(mu,
-                                                   self.obs_noise * jnp.ones((N, C)))
+                                                   self.obs_noise * jnp.ones((ntest, output_dim)))
 
         return pred_dist
 
     def predict_given_params_classification(self,
                                             params: chex.ArrayTree,
                                             x: chex.Array):
-        # classifier with C outputs (one hot)
-        # n test examples, dimensionality of input
+        # Classifier with C outputs (one hot)
         logits = self.model_fn(params, x)
         probs = nn.softmax(logits, axis=-1)  # normalize over C
         pred_dist = distrax.Categorical(probs=probs)
@@ -81,7 +102,10 @@ class Agent:
                                     x: chex.Array,
                                     nsamples_params: int,
                                     nsamples_output: int) -> chex.Array:
-        # X: N * D, Y : N * M * C, where M = nsamples_outout, C  = |Y|
+
+        # x : batch size * number of features(N * D)
+        # Y : number of sampled params * batch size * number of sampled outputs * output dimensionality 
+        # Y : S * N * M * C where M = nsamples_outout, C  = |Y|
 
         def sample_from_predictive_distribution(key, theta, x):
             inputs = x.reshape((1, -1))
@@ -110,10 +134,14 @@ class Agent:
                              X: chex.Array,
                              Y: chex.Array,
                              nsamples_params: int) -> chex.Array:
-        # X: N*D, Y: N*C, returns N*1 (N=batch size, C=event shape)
+        # X: N*D
+        # Y: N*C
+        # returns N*1 
+        # (N=batch size, C=event shape)
         # P(s,n) = p(y(n,:) | x(n,:), theta(s)) = sum_c p(y(n,c) | x(n,:), theta(s))
         # P(n) = mean_s P(s,n)
         # Returns L(n) = log P(n)
+
         N = len(X)
 
         def logprob_fn(key):
@@ -151,7 +179,7 @@ class Agent:
             # distribution  over batch size N
             vlogprob = vmap(logprob_fn, in_axes=(None, 0, 0))
             logprobs = vlogprob(params_sample, X, Y)
-            return jnp.sum(logprobs, axis=0)
+            return jnp.sum(logprobs, axis=-1)
 
         keys = random.split(key, nsamples_params)
         logprobs_joint = vmap(logjoint_fn)(keys)
@@ -161,12 +189,28 @@ class Agent:
 
         return posterior_predictive_density
 
-    def posterior_predictive_mean(self, key,belief, x) -> chex.Array:
-        samples = self.posterior_predictive_sample(key, belief, x, 10, 10)
-        samples = samples.reshape((-1, len(x)))
+    def posterior_predictive_mean(self,
+                                    key: chex.PRNGKey,
+                                    belief: BeliefState,
+                                    x: chex.Array,
+                                    nsamples_params: int,
+                                    nsamples_output: int) -> chex.Array:
+
+        samples = self.posterior_predictive_sample(key, belief, x, nsamples_params, nsamples_output)
+        samples = jnp.transpose(samples, axes=[0, 2, 1, 3])
+        _, _, batch_size, output_dim = samples.shape
+        samples = samples.reshape((-1 , batch_size, output_dim))
+
         return jnp.mean(samples, axis=0)
 
-    def posterior_predictive_mean_and_var(self, key, belief, x) -> chex.Array:
-        samples = self.posterior_predictive_sample(key,belief, x, 10, 10)
-        samples = samples.reshape((-1, len(x)))
+    def posterior_predictive_mean_and_var(self,
+                                    key: chex.PRNGKey,
+                                    belief: BeliefState,
+                                    x: chex.Array,
+                                    nsamples_params: int,
+                                    nsamples_output: int) -> chex.Array:
+        samples = self.posterior_predictive_sample(key, belief, x, nsamples_params, nsamples_output)
+        samples = jnp.transpose(samples, axes=[0, 2, 1, 3])
+        _, _, batch_size, output_dim = samples.shape
+        samples = samples.reshape((-1 , batch_size, output_dim))
         return jnp.mean(samples, axis=0), jnp.var(samples, axis=0)

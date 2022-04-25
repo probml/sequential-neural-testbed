@@ -46,8 +46,6 @@ class SequentialRegressionEnvironment(SequentialDataEnvironment):
           Tuple of data (with njoint examples) and log-likelihood under posterior.
         """
         def joint_data_per_sample(key):
-            x_key, y_key = random.split(key, 2)
-
             out = self.y_test.shape[-1]
             nfeatures = self.X_test.shape[-1]
 
@@ -55,7 +53,7 @@ class SequentialRegressionEnvironment(SequentialDataEnvironment):
             y_test = self.y_test.reshape((-1, out))
 
             # Sample njoint x's from the testing cache for evaluation
-            test_x_indices = random.randint(x_key, [njoint], 0, len(X_test))
+            test_x_indices = random.randint(key, [njoint], 0, len(X_test))
             X_test = X_test[test_x_indices]
             chex.assert_shape(X_test, [njoint, nfeatures])
 
@@ -72,5 +70,4 @@ class SequentialRegressionEnvironment(SequentialDataEnvironment):
             return (X_test, y_test), log_likelihood
 
         keys = random.split(key, nsamples)
-
         return vmap(joint_data_per_sample)(keys)

@@ -2,28 +2,24 @@ import jax.numpy as jnp
 from jax import random, tree_leaves, tree_map
 from jax import nn
 
-from functools import partial
 from matplotlib import pyplot as plt
 import optax
 from sklearn.preprocessing import PolynomialFeatures
-from jsl.experimental.seql.agents import eekf_agent
 
-from jsl.experimental.seql.agents.bfgs_agent import bfgs_agent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
-from jsl.experimental.seql.agents.lbfgs_agent import lbfgs_agent
-from jsl.experimental.seql.agents.scikit_log_reg_agent import scikit_log_reg_agent
-from jsl.experimental.seql.agents.sgd_agent import sgd_agent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import sgld_agent
+from jsl.experimental.seql.agents.eekf_agent import EEKFAgent
+from jsl.experimental.seql.agents.bfgs_agent import BFGSAgent
+from jsl.experimental.seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from jsl.experimental.seql.agents.lbfgs_agent import LBFGSAgent
+from jsl.experimental.seql.agents.sgd_agent import SGDAgent
+from jsl.experimental.seql.agents.sgmcmc_sgld_agent import SGLDAgent
 from jsl.experimental.seql.environments.base import make_random_poly_classification_environment
-from jsl.experimental.seql.experiments.bimodal_reg_demo import loglikelihood_fn
 from jsl.experimental.seql.experiments.experiment_utils import run_experiment
 from jsl.experimental.seql.experiments.plotting import sort_data
-from jsl.experimental.seql.utils import cross_entropy_loss, train
+from jsl.experimental.seql.utils import cross_entropy_loss
 from jsl.nlds.base import NLDS
 
 
 def fz(x): return x
-
 
 def fx(w, x):
     return (x @ w)[None, ...]
@@ -46,14 +42,6 @@ def loglikelihood_fn(params, x, y, model_fn):
     return -cross_entropy_loss(y, logprobs)
 
 
-def logjoint_fn(params, inputs, outputs, model_fn, strength=0.2):
-    return loglikelihood_fn(params, inputs, outputs, model_fn)  # + logprior_fn(params, strength) / len(inputs)
-
-
-def neg_logjoint_fn(params, inputs, outputs, model_fn, strength=0.2):
-    return -logjoint_fn(params, inputs, outputs, model_fn, strength)
-
-
 def print_accuracy(logprobs, ytest):
     ytest_ = jnp.squeeze(ytest)
     predictions = jnp.where(logprobs > jnp.log(0.5), 1, 0)
@@ -61,8 +49,6 @@ def print_accuracy(logprobs, ytest):
 
 
 def callback_fn(agent, env, agent_name, **kwargs):
-    print_accuracy(kwargs["preds"][0], kwargs["Y_test"])
-
     if "subplot_idx" not in kwargs and kwargs["t"] not in kwargs["timesteps"]:
         return
     elif "subplot_idx" not in kwargs:
@@ -74,7 +60,7 @@ def callback_fn(agent, env, agent_name, **kwargs):
                                    kwargs["ncols"],
                                    subplot_idx)
 
-    belief = kwargs["belief_state"]
+    belief = kwargs["belief"]
 
     poly = PolynomialFeatures(kwargs["degree"])
     *_, nfeatures = env.X_train.shape
@@ -95,9 +81,14 @@ def callback_fn(agent, env, agent_name, **kwargs):
     r1, r2 = r1.reshape((len(r1), 1)), r2.reshape((len(r2), 1))
     # horizontal stack vectors to create x1,x2 input for the model
     grid = jnp.hstack((r1, r2))
+    x = poly.fit_transform(grid)
 
-    grid_preds = nn.softmax(agent.predict(belief,
-                                          poly.fit_transform(grid))[0], axis=-1)
+    grid_preds = agent.posterior_predictive_mean(random.PRNGKey(0),
+                                    belief,
+                                    x,
+                                    10,
+                                    5)
+
     # keep just the probabilities for class 0
     grid_preds = grid_preds[:, 0]
     # reshape the predictions back into a grid
@@ -148,7 +139,7 @@ def main():
     nsteps = 10
     nfeatures, nclasses = 2, 2
 
-    env_key, nuts_key, sgld_key = random.split(key, 3)
+    env_key, experiment_key = random.split(key, 2)
     obs_noise = 1.
     env = lambda batch_size: make_random_poly_classification_environment(env_key,
                                                                          degree,
@@ -168,116 +159,118 @@ def main():
     P0 = jnp.eye(input_dim) * 2.0
     mu0 = jnp.zeros((input_dim,))
     nlds = NLDS(fz, fx, Pt, Rt, mu0, P0)
+    is_classifier = True
 
-    eekf = eekf_agent.eekf(nlds, obs_noise=obs_noise)
+    eekf = EEKFAgent(nlds,
+                     model_fn,
+                     obs_noise,
+                     is_classifier=is_classifier)
 
     optimizer = optax.adam(1e-2)
 
-    tau = 1.
-    strength = obs_noise / tau
-    partial_objective_fn = partial(neg_logjoint_fn, strength=strength)
+    #tau = 1.
+    #strength = obs_noise / tau
 
     nepochs = 20
+    sgd = SGDAgent(loglikelihood_fn,
+    model_fn,
+    logprior_fn,
+    nepochs=nepochs,
+    buffer_size=buffer_size,
+    obs_noise=obs_noise,
+    optimizer=optimizer,
+    is_classifier=is_classifier)
 
-    sgd = sgd_agent(partial_objective_fn,
-                    model_fn,
-                    optimizer=optimizer,
-                    obs_noise=obs_noise,
-                    nepochs=nepochs,
-                    buffer_size=buffer_size)
+    batch_sgd = SGDAgent(loglikelihood_fn,
+    model_fn,
+    logprior_fn,
+    nepochs=nepochs * nsteps,
+    buffer_size=buffer_size,
+    obs_noise=obs_noise,
+    optimizer=optimizer,
+    is_classifier=is_classifier)
 
-    batch_sgd = sgd_agent(partial_objective_fn,
-                          model_fn,
-                          optimizer=optimizer,
-                          obs_noise=obs_noise,
-                          buffer_size=buffer_size,
-                          nepochs=nepochs * nsteps)
+
 
     nsamples, nwarmup = 500, 300
-    nuts = blackjax_nuts_agent(nuts_key,
-                               loglikelihood_fn,
-                               model_fn,
-                               nsamples=nsamples,
-                               nwarmup=nwarmup,
-                               obs_noise=obs_noise,
-                               buffer_size=buffer_size)
 
-    batch_nuts = blackjax_nuts_agent(nuts_key,
-                                     loglikelihood_fn,
-                                     model_fn,
-                                     nsamples=nsamples * nsteps,
-                                     nwarmup=nwarmup,
-                                     obs_noise=obs_noise,
-                                     buffer_size=buffer_size)
+    nuts = BlackJaxNutsAgent(loglikelihood_fn,
+    model_fn,
+    nsamples,
+    nwarmup,
+    logprior_fn,
+    obs_noise=obs_noise,
+    buffer_size=buffer_size,
+    is_classifier=is_classifier)
+    batch_nuts = BlackJaxNutsAgent(loglikelihood_fn,
+    model_fn,
+    nsamples * nsteps,
+    nwarmup,
+    logprior_fn,
+    obs_noise=obs_noise,
+    buffer_size=buffer_size,
+    is_classifier=is_classifier)
 
-    scikit_agent = scikit_log_reg_agent(buffer_size=buffer_size)
-
-    partial_logprob_fn = partial(loglikelihood_fn,
-                                 model_fn=model_fn)
-    dt = 1e-5
-    sgld = sgld_agent(sgld_key,
-                      partial_logprob_fn,
-                      logprior_fn,
-                      model_fn,
-                      dt=dt,
-                      batch_size=batch_size,
-                      nsamples=nsamples,
-                      obs_noise=obs_noise,
-                      buffer_size=buffer_size)
 
     dt = 1e-5
-    batch_sgld = sgld_agent(sgld_key,
-                            partial_logprob_fn,
-                            logprior_fn,
-                            model_fn,
-                            dt=dt,
-                            batch_size=batch_size,
-                            nsamples=nsamples * nsteps,
-                            obs_noise=obs_noise,
-                            buffer_size=buffer_size)
 
-    bfgs = bfgs_agent(partial_objective_fn,
-                      obs_noise=obs_noise,
-                      buffer_size=buffer_size)
+    sgld = SGLDAgent(loglikelihood_fn,
+                     model_fn,
+                     dt,
+                     batch_size,
+                     nsamples,
+                     logprior_fn,
+                     buffer_size=buffer_size,
+                     obs_noise=obs_noise,
+                     is_classifier=is_classifier)
+    
+    bfgs = BFGSAgent(loglikelihood_fn,
+                     model_fn,
+                     logprior_fn,
+                     buffer_size=buffer_size,
+                     obs_noise=obs_noise)
 
-    batch_bfgs = bfgs_agent(partial_objective_fn,
-                            obs_noise=obs_noise,
-                            buffer_size=buffer_size)
+    lbfgs = LBFGSAgent(loglikelihood_fn,
+    model_fn,
+    logprior_fn,
+    buffer_size=buffer_size,
+    obs_noise=obs_noise)
 
-    lbfgs = lbfgs_agent(partial_objective_fn,
-                        obs_noise=obs_noise,
-                        history_size=buffer_size)
-
-    batch_lbfgs = lbfgs_agent(partial_objective_fn,
-                              obs_noise=obs_noise,
-                              history_size=buffer_size)
 
     agents = {
+        #"eekf": eekf,
         "sgld": sgld,
-        "scikit": scikit_agent,
+        #"scikit": scikit_agent,
         "sgd": sgd,
         "bfgs": bfgs,
         "lbfgs": lbfgs,
+        "nuts":nuts,
     }
 
     batch_agents = {
         "eekf": eekf,
         "sgd": batch_sgd,
         "nuts": batch_nuts,
-        "sgld": batch_sgld,
-        "bfgs": batch_bfgs,
-        "lbfgs": batch_lbfgs,
-        "scikit": scikit_agent,
+        "sgld": sgld,
+        "bfgs": bfgs,
+        "lbfgs": lbfgs,
     }
+
     timesteps = list(range(nsteps))
     nrows = len(agents)
     ncols = len(timesteps)
-    run_experiment(agents,
+    njoint = 10
+    nsamples_input, nsamples_output = 1, 1
+    run_experiment(experiment_key,
+                   agents,
                    env,
                    initialize_params,
                    batch_size,
                    ntrain,
                    nsteps,
+                   nsamples_input,
+                   nsamples_output,
+                   njoint,
                    nrows,
                    ncols,
                    callback_fn=callback_fn,

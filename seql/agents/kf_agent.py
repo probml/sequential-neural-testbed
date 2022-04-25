@@ -49,11 +49,15 @@ class KalmanFilterRegAgent(Agent):
                y: chex.Array):
         *_, input_dim = x.shape
 
-        A, Q = jnp.eye(input_dim), 0
+        A = jnp.eye(input_dim)
+        Q = 0
         C = lambda t: x[t][None, ...]
+        R = self.obs_noise * jnp.ones((1, 1))
 
-        lds = LDS(A, C, Q, self.obs_noise, belief.mu, belief.Sigma)
-        mu, Sigma, _, _ = kalman_filter(lds, y,
+        lds = LDS(A, C, Q, R, belief.mu, belief.Sigma)
+
+        mu, Sigma, _, _ = kalman_filter(lds,
+                                        y,
                                         return_history=self.return_history)
         if self.return_history:
             history = (mu, Sigma)

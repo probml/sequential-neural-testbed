@@ -1,36 +1,16 @@
-from functools import partial
-from jax import lax
-
 import warnings
 import jax.numpy as jnp
 
 from jaxopt import LBFGS
 
 import chex
-import typing_extensions
 from typing import Any, Callable, NamedTuple, Optional, Union
 from jsl.experimental.seql.agents.agent_utils import Memory
 
-from jsl.experimental.seql.agents.base import Agent
+from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 AutoOrBoolean = Union[str, bool]
-
-
-class ModelFn(typing_extensions.Protocol):
-    def __call__(self,
-                 params: chex.Array,
-                 inputs: chex.Array):
-        ...
-
-
-class ObjectiveFn(typing_extensions.Protocol):
-    def __call__(self,
-                 params: chex.Array,
-                 inputs: chex.Array,
-                 outputs: chex.Array,
-                 model_fn: ModelFn):
-        ...
 
 
 class BeliefState(NamedTuple):
@@ -40,8 +20,9 @@ class BeliefState(NamedTuple):
 class LBFGSAgent(Agent):
 
     def __init__(self,
-                 objective_fn: ObjectiveFn,
-                 model_fn: ModelFn = lambda mu, x: x @ mu,
+                 loglikelihood: LoglikelihoodFn,
+                 model_fn: ModelFn,
+                 logprior: LogpriorFn = lambda params: 0.,
                  maxiter: int = 500,
                  maxls: int = 15,
                  history_size: int = 10,
@@ -89,14 +70,25 @@ class LBFGSAgent(Agent):
             Algorithm 7.5 (page 179).
         '''
         super(LBFGSAgent, self).__init__(is_classifier)
-        partial_objective_fn = partial(objective_fn,
-                                       model_fn=model_fn)
+
+        self.model_fn = model_fn
+
+        def loss_fn(params: Params,
+                 x: chex.Array,
+                 y: chex.Array):
+
+            ll =  loglikelihood(params,
+                                x, y,
+                                self.model_fn)
+            lp = logprior(params)
+            return -(ll + lp)
+
+        self.loss_fn = loss_fn
 
         assert min_n_samples <= buffer_size
 
         self.memory = Memory(buffer_size)
-        self.model_fn = model_fn
-        self.lbfgs = LBFGS(partial_objective_fn,
+        self.lbfgs = LBFGS(self.loss_fn,
                            has_aux,
                            maxiter,
                            tol,
@@ -132,8 +124,8 @@ class LBFGSAgent(Agent):
             return belief, None
 
         params, info = self.lbfgs.run(belief.params,
-                                      inputs=x_,
-                                      outputs=y_)
+                                      x=x_,
+                                      y=y_)
         return BeliefState(params), info
 
     def get_posterior_cov(self,

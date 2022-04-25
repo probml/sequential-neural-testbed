@@ -19,7 +19,7 @@ from jsl.experimental.seql.agents.sgmcmc_sgld_agent import SGLDAgent
 from jsl.experimental.seql.agents.eekf_agent import EEKFAgent
 from jsl.experimental.seql.environments.base import make_classification_mlp_environment, make_mlp
 from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.utils import mean_squared_error, train
+from jsl.experimental.seql.utils import mean_squared_error
 from jsl.experimental.seql.experiments.plotting import colors
 from jsl.nlds.extended_kalman_filter import NLDS
 
@@ -30,17 +30,8 @@ def logprior_fn(params):
     return sum(tree_leaves(tree_map(lambda x: jnp.sum(x ** 2), params)))
 
 
-def negative_mean_square_error(params, inputs, outputs, model_fn, strength=0.2):
-    return -penalized_objective_fn(params, inputs, outputs, model_fn, strength=strength)
-
-
-def penalized_objective_fn(params, inputs, outputs, model_fn, strength=0.2):
-    return mean_squared_error(params, inputs, outputs, model_fn) + strength * logprior_fn(params) / len(inputs)
-
-
-def energy_fn(params, data, model_fn, strength=0.2):
-    return mean_squared_error(params, *data, model_fn) + strength * logprior_fn(params) / len(data[0])
-
+def loglikelihood_fn(params, inputs, outputs, model_fn, strength=0.2):
+    return -mean_squared_error(params, inputs, outputs, model_fn) + strength * logprior_fn(params) / len(inputs)
 
 losses = []
 
@@ -89,39 +80,9 @@ def initialize_params(agent_name, **kwargs):
     return (params,)
 
 
-def sweep(agents, env, train_batch_size, ntrain, nsteps, figsize=(12, 6), **init_kwargs):
-    batch_agents_included = "batch_agents" in init_kwargs
-
-    nrows = len(agents)
-    ncols = len(init_kwargs["timesteps"]) + int(batch_agents_included)
-    fig, big_axes = plt.subplots(nrows=1,
-                                 ncols=nrows,
-                                 figsize=figsize)
-
-    for idx, (big_ax, (agent_name, agent)) in enumerate(zip(big_axes, agents.items())):
-        params = initialize_params(agent_name, **init_kwargs)
-        belief = agent.init_state(params)
-
-        partial_callback = lambda **kwargs: callback_fn(agent,
-                                                        env(train_batch_size),
-                                                        agent_name,
-                                                        fig=fig,
-                                                        nrows=nrows,
-                                                        ncols=ncols,
-                                                        idx=idx,
-                                                        ax=big_ax,
-                                                        **init_kwargs,
-                                                        **kwargs)
-
-        train(belief, agent, env(train_batch_size),
-              nsteps=nsteps, callback=partial_callback)
-
-    plt.savefig("ajsk.png")
-
-
 def main():
     key = random.PRNGKey(0)
-    model_key, env_key, nuts_key, sgld_key, init_key, eekf_key = random.split(key, 6)
+    model_key, env_key, init_key, eekf_key = random.split(key, 4)
     degree = 3
     ntrain = 50
     ntest = 50

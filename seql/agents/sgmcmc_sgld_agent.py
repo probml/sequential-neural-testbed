@@ -7,40 +7,13 @@ import chex
 from typing import Any, NamedTuple, Callable
 
 import warnings
-import typing_extensions
+from functools import partial
 
 from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent
+from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Samples = Any
-
-
-class LoglikelihoodFn(typing_extensions.Protocol):
-
-    def __call__(self,
-                 params: Params,
-                 x: chex.Array,
-                 y: chex.Array):
-        ...
-
-
-class LogpriorFn(typing_extensions.Protocol):
-
-    def __call__(self,
-                 params: Params,
-                 x: chex.Array,
-                 y: chex.Array):
-        ...
-
-
-class ModelFn(typing_extensions.Protocol):
-
-    def __call__(self,
-                 params: Params,
-                 x: chex.Array):
-        ...
-
 
 class BeliefState(NamedTuple):
     params: Params
@@ -56,11 +29,11 @@ class SGLDAgent(Agent):
 
     def __init__(self,
                  loglikelihood: LoglikelihoodFn,
-                 logprior: LogpriorFn,
                  model_fn: ModelFn,
                  dt: float,
                  batch_size: int,
                  nsamples: int,
+                 logprior: LogpriorFn=lambda params: 0.,
                  nlast: int = 10,
                  min_n_samples: int = 1,
                  buffer_size: int = 0,
@@ -79,7 +52,8 @@ class SGLDAgent(Agent):
         self.dt = dt
         self.model_fn = model_fn
         self.logprior = logprior
-        self.loglikelihood = loglikelihood
+
+        self.loglikelihood = partial(loglikelihood, model_fn=model_fn)
         self.obs_noise = obs_noise
 
     def init_state(self,

@@ -10,6 +10,7 @@ from typing import NamedTuple, Callable, Optional, Tuple
 
 from jsl.experimental.seql.agents.base import Agent
 from jsl.experimental.seql.environments.sequential_data_env import SequentialDataEnvironment
+from jsl.experimental.seql.metrics.regression import gaussian_sample_kl
 
 
 Belief = NamedTuple
@@ -65,7 +66,7 @@ def mean_squared_error(params: chex.ArrayTree,
                        outputs: chex.Array,
                        model_fn: Callable) -> float:
     predictions = model_fn(params, inputs)
-    return jnp.mean(jnp.power(predictions - outputs, 2))
+    return jnp.sum(jnp.power(predictions - outputs, 2))
 
 
 # Main function
@@ -74,7 +75,8 @@ def train(key: chex.PRNGKey,
           agent: Agent,
           env: SequentialDataEnvironment,
           nsteps: int,
-          nsamples: int,
+          nsamples_input: int,
+          nsamples_output: int,
           njoint: int,
           callback: Optional[Callable] = None) -> Tuple[Belief, chex.Array]:
 
@@ -85,13 +87,26 @@ def train(key: chex.PRNGKey,
     for t, rng_key in enumerate(keys):
         X_train, Y_train, X_test, Y_test = env.get_data(t)
 
-        data_key, update_key, ll_key, joint_key = random.split(rng_key, 4)
-        (X_joint, Y_joint), ll = env.get_joint_data(data_key, nsamples, njoint)
+        update_key, data_key, joint_key = random.split(rng_key, 3)
+
 
         belief, info = agent.update(update_key,
                                     belief,
                                     X_train,
                                     Y_train)
+        
+
+        (X_joint, Y_joint), true_ll = env.get_joint_data(data_key,
+                                                         nsamples_input,
+                                                         njoint)
+
+        logjoints = agent.joint_logprob_given_belief(joint_key,
+                                                belief,
+                                                X_joint,
+                                                Y_joint,
+                                                nsamples_output)
+
+        kl_div = gaussian_sample_kl(logjoints, true_ll)
 
         if callback:
             if not isinstance(callback, list):
@@ -109,9 +124,11 @@ def train(key: chex.PRNGKey,
                     Y_test=Y_test,
                     X_joint=X_joint,
                     Y_joint=Y_joint,
-                    true_ll=ll,
+                    kl=kl_div,
                     t=t
                 )
+
+    
 
     return belief, rewards
 

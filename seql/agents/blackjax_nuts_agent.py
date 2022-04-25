@@ -12,27 +12,11 @@ import typing_extensions
 from typing import Any, NamedTuple, Callable
 
 from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent
+from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Samples = Any
 State = NamedTuple
-
-
-class ModelFn(typing_extensions.Protocol):
-    def __call__(self,
-                 params: Params,
-                 x: chex.Array):
-        ...
-
-
-class LogProbFN(typing_extensions.Protocol):
-    def __call__(self,
-                 params: Params,
-                 x: chex.Array,
-                 y: chex.Array,
-                 model_fn: ModelFn):
-        ...
 
 
 class BeliefState(NamedTuple):
@@ -69,10 +53,11 @@ def inference_loop(rng_key, kernel, initial_state, num_samples):
 class BlackJaxNutsAgent(Agent):
 
     def __init__(self,
-                 logprob_fn: LogProbFN,
+                 loglikelihood: LoglikelihoodFn,
                  model_fn: ModelFn,
                  nsamples: int,
                  nwarmup: int,
+                 logprior: LogpriorFn = lambda params: 0.,
                  nlast: int = 10,
                  buffer_size: int = 0,
                  min_n_samples: int = 1,
@@ -87,8 +72,23 @@ class BlackJaxNutsAgent(Agent):
         assert min_n_samples <= buffer_size or buffer_size == 0
         self.memory = Memory(buffer_size)
 
-        self.logprob_fn = logprob_fn
+
         self.model_fn = model_fn
+
+        def logprob_fn(params: Params,
+                 x: chex.Array,
+                 y: chex.Array):
+
+            ll =  loglikelihood(params,
+                                x, y,
+                                self.model_fn)
+            lp = logprior(params)
+            return -(ll + lp)
+
+        self.logprob_fn = logprob_fn
+        self.loglikelihood = loglikelihood
+        self.logprior = logprior
+
         self.nwarmup = nwarmup
         self.nlast = nlast
         self.nsamples = nsamples
@@ -116,7 +116,7 @@ class BlackJaxNutsAgent(Agent):
 
         @jit
         def partial_potential_fn(params):
-            return self.logprob_fn(params, x_, y_, self.model_fn)
+            return self.logprob_fn(params, x_, y_)
 
         warmup_key, sample_key = random.split(key)
 
@@ -126,7 +126,7 @@ class BlackJaxNutsAgent(Agent):
         kernel_generator = lambda step_size, inverse_mass_matrix: nuts.kernel(partial_potential_fn,
                                                                               step_size,
                                                                               inverse_mass_matrix)
-        final_state, (step_size, inverse_mass_matrix), info = stan_warmup.run(warmup_key,
+        final, (step_size, inverse_mass_matrix), info = stan_warmup.run(warmup_key,
                                                                               kernel_generator,
                                                                               state,
                                                                               self.nwarmup)
@@ -150,6 +150,7 @@ class BlackJaxNutsAgent(Agent):
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):
+
         potential_fn = lambda params: belief.state.potential_energy
 
         state = nuts.new_state(belief.state.position,
@@ -160,7 +161,7 @@ class BlackJaxNutsAgent(Agent):
                                       belief.step_size,
                                       belief.inverse_mass_matrix))
 
-        final, states = inference_loop(key,
+        final, _ = inference_loop(key,
                                        nuts_kernel,
                                        state,
                                        1)

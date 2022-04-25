@@ -9,10 +9,9 @@ import typing_extensions
 from typing import Any, NamedTuple
 
 import warnings
-from functools import partial
 
 from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent
+from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Optimizer = NamedTuple
@@ -52,27 +51,39 @@ class Info(NamedTuple):
 class SGDAgent(Agent):
 
     def __init__(self,
-                 loss_fn: LossFn,
+                 loglikelihood: LoglikelihoodFn,
                  model_fn: ModelFn,
+                 logprior: LogpriorFn = lambda params: 0.,
                  nepochs: int = 20,
                  threshold: int = 1,
                  buffer_size: int = jnp.inf,
                  obs_noise: float = 0.1,
                  optimizer: Optimizer = optax.adam(1e-2),
                  is_classifier: bool = False):
+
         super(SGDAgent, self).__init__(is_classifier)
         assert threshold <= buffer_size
         self.buffer_size = buffer_size
         memory = Memory(buffer_size)
         self.memory = memory
         self.threshold = threshold
+        self.model_fn = model_fn
 
-        partial_loss_fn = partial(loss_fn, model_fn=model_fn)
-        value_and_grad_fn = jit(value_and_grad(partial_loss_fn))
+        def loss_fn(params: Params,
+                 x: chex.Array,
+                 y: chex.Array):
+
+            ll =  loglikelihood(params,
+                                x, y,
+                                self.model_fn)
+            lp = logprior(params)
+            return -(ll + lp)
+
+        self.loss_fn = loss_fn
+        value_and_grad_fn = jit(value_and_grad(self.loss_fn))
+        self.value_and_grad_fn = value_and_grad_fn
         self.optimizer = optimizer
         self.nepochs = nepochs
-        self.value_and_grad_fn = value_and_grad_fn
-        self.model_fn = model_fn
         self.obs_noise = obs_noise
 
     def init_state(self,

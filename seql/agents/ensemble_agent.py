@@ -9,10 +9,9 @@ import typing_extensions
 from typing import Any, NamedTuple
 
 import warnings
-from functools import partial
 
 from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent
+from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn
 
 Params = Any
 Optimizer = NamedTuple
@@ -60,9 +59,10 @@ def bootstrap_sampling(key, nsamples):
 class EnsembleAgent(Agent):
 
     def __init__(self,
-                 loss_fn: LossFn,
+                 loglikelihood: LoglikelihoodFn,
                  model_fn: ModelFn,
                  nensembles: int,
+                 logprior: LogpriorFn = lambda params: 0.,
                  nepochs: int = 20,
                  min_n_samples: int = 1,
                  buffer_size: int = jnp.inf,
@@ -75,10 +75,25 @@ class EnsembleAgent(Agent):
         assert min_n_samples <= buffer_size
 
         self.memory = Memory(buffer_size)
-        partial_loss_fn = partial(loss_fn, model_fn=model_fn)
+
 
         self.model_fn = model_fn
-        self.value_and_grad_fn = jit(value_and_grad(partial_loss_fn))
+
+        def loss_fn(params: Params,
+                 x: chex.Array,
+                 y: chex.Array):
+
+            ll =  loglikelihood(params,
+                                x, y,
+                                self.model_fn)
+            lp = logprior(params)
+            return -(ll + lp)
+
+        self.loss_fn = loss_fn
+        self.loglikelihood = loglikelihood
+        self.logprior = logprior
+
+        self.value_and_grad_fn = jit(value_and_grad(self.loss_fn))
         self.nensembles = nensembles
         self.optimizer = optimizer
         self.buffer_size = buffer_size
