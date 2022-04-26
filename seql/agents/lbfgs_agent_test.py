@@ -9,8 +9,8 @@ import itertools
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.lbfgs_agent import LBFGSAgent
-from jsl.experimental.seql.utils import mean_squared_error
+from seql.agents.lbfgs_agent import LBFGSAgent
+from seql.utils import mean_squared_error
 
 
 class BFGSTest(parameterized.TestCase):

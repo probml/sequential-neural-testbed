@@ -9,16 +9,16 @@ import flax.linen as nn
 from functools import partial
 from matplotlib import pyplot as plt
 
-from jsl.experimental.seql.agents.bfgs_agent import bfgs_agent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
-from jsl.experimental.seql.agents.laplace_agent import laplace_agent
-from jsl.experimental.seql.agents.lbfgs_agent import lbfgs_agent
-from jsl.experimental.seql.agents.lbfgsb_agent import lbfgsb_agent
-from jsl.experimental.seql.agents.sgd_agent import sgd_agent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import sgld_agent
-from jsl.experimental.seql.environments.base import make_evenly_spaced_x_sampler, make_sin_wave_regression_environment
-from jsl.experimental.seql.experiments.plotting import plot_regression_posterior_predictive
-from jsl.experimental.seql.utils import mean_squared_error, train
+from seql.agents.bfgs_agent import bfgs_agent
+from seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
+from seql.agents.laplace_agent import laplace_agent
+from seql.agents.lbfgs_agent import lbfgs_agent
+from seql.agents.lbfgsb_agent import lbfgsb_agent
+from seql.agents.sgd_agent import sgd_agent
+from seql.agents.sgmcmc_sgld_agent import sgld_agent
+from seql.environments.base import make_evenly_spaced_x_sampler, make_sin_wave_regression_environment
+from seql.experiments.plotting import plot_regression_posterior_predictive
+from seql.utils import mean_squared_error, train
 
 
 class MLP(nn.Module):

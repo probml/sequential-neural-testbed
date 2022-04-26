@@ -9,7 +9,7 @@ import itertools
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.lbfgsb_agent import LBFGSBAgent
+from seql.agents.lbfgsb_agent import LBFGSBAgent
 
 
 class SGDTest(parameterized.TestCase):

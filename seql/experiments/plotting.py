@@ -67,8 +67,7 @@ def plot_regression_posterior_predictive(ax,
     ax.plot(jnp.squeeze(X_test[:, 1]),
             jnp.squeeze(ground_truth),
             color="#72A276",
-            linewidth=2)
-    print("xtest", X_test[:, 1].shape)
+            linewidth=5)
 
     ax.errorbar(jnp.squeeze(X_test[:, 1]),
                 jnp.squeeze(ypred),

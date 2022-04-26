@@ -6,19 +6,19 @@ from jaxopt import ScipyMinimize
 
 from matplotlib import pyplot as plt
 
-from jsl.experimental.seql.agents.bayesian_lin_reg_agent import BayesianReg
-from jsl.experimental.seql.agents.bfgs_agent import BFGSAgent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
-from jsl.experimental.seql.agents.kf_agent import KalmanFilterRegAgent
-from jsl.experimental.seql.agents.laplace_agent import LaplaceAgent
-from jsl.experimental.seql.agents.lbfgs_agent import LBFGSAgent
-from jsl.experimental.seql.agents.sgd_agent import SGDAgent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import SGLDAgent
-from jsl.experimental.seql.environments.base import make_evenly_spaced_x_sampler, \
+from seql.agents.bayesian_lin_reg_agent import BayesianReg
+from seql.agents.bfgs_agent import BFGSAgent
+from seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from seql.agents.kf_agent import KalmanFilterRegAgent
+from seql.agents.laplace_agent import LaplaceAgent
+from seql.agents.lbfgs_agent import LBFGSAgent
+from seql.agents.sgd_agent import SGDAgent
+from seql.agents.sgmcmc_sgld_agent import SGLDAgent
+from seql.environments.base import make_evenly_spaced_x_sampler, \
     make_random_poly_regression_environment
-from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.experiments.plotting import plot_regression_posterior_predictive
-from jsl.experimental.seql.utils import mean_squared_error
+from seql.experiments.experiment_utils import run_experiment
+from seql.experiments.plotting import plot_regression_posterior_predictive
+from seql.utils import mean_squared_error
 
 
 plt.style.use("seaborn-poster")
@@ -28,7 +28,7 @@ def model_fn(w, x):
     return x @ w
 
 def logprior_fn(params):
-    strength = 0.1
+    strength = 0.
     return strength * jnp.sum(params ** 2)
 
 def loglikelihood_fn(params, x, y, model_fn):
@@ -91,7 +91,7 @@ def main():
     ntrain = 50
     ntest = 50
     batch_size = 5
-    obs_noise = 1.
+    obs_noise = 0.1
 
     env_key, run_key = random.split(key)
     env = lambda batch_size: make_random_poly_regression_environment(env_key,
@@ -134,7 +134,7 @@ def main():
                          buffer_size=buffer_size,
                          nepochs=nepochs * nsteps)
 
-    nsamples, nwarmup = 200, 100
+    nsamples, nwarmup = 300, 200
     nuts = BlackJaxNutsAgent(
         loglikelihood_fn,
         model_fn,
@@ -205,13 +205,14 @@ def main():
 
 
     agents = {
+        "nuts": nuts,
+
         "kf": kf,
         "exact bayes": bayes,
         "sgd": sgd,
         "laplace": laplace,
         "bfgs": bfgs,
         "lbfgs": lbfgs,
-        "nuts": nuts,
         "sgld": sgld,
     }
 

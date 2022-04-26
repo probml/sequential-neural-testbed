@@ -5,9 +5,9 @@ from jaxopt import LBFGS
 
 import chex
 from typing import Any, Callable, NamedTuple, Optional, Union
-from jsl.experimental.seql.agents.agent_utils import Memory
+from seql.agents.agent_utils import Memory
 
-from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
+from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 AutoOrBoolean = Union[str, bool]

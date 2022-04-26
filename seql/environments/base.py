@@ -8,9 +8,9 @@ from typing import Callable, List, Tuple, Union
 
 from sklearn.preprocessing import PolynomialFeatures
 
-from jsl.experimental.seql.environments.sequential_classification_env import SequentialClassificationEnvironment
-from jsl.experimental.seql.environments.sequential_regression_env import SequentialRegressionEnvironment
-from jsl.experimental.seql.environments.sequential_torch_env import SequentialTorchEnvironment
+from seql.environments.sequential_classification_env import SequentialClassificationEnvironment
+from seql.environments.sequential_regression_env import SequentialRegressionEnvironment
+from seql.environments.sequential_torch_env import SequentialTorchEnvironment
 
 
 def make_gaussian_sampler(loc: Union[chex.Array, float],
@@ -210,6 +210,7 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
                                             x_train_generator: Callable = random.normal,
                                             x_test_generator: Callable = random.normal,
                                             shuffle: bool = False):
+    
     train_key, test_key, w_key = random.split(key, 3)
     X_train = x_train_generator(train_key, (ntrain, 1))
     X_test = x_test_generator(test_key, (ntest, 1))
@@ -224,13 +225,13 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
 
     D = Phi.shape[-1]
     w = random.normal(w_key, (D, nout))
+    Y = Phi @ w 
 
     if obs_noise > 0.0:
         obs_key, key = random.split(key)
         nsamples = ntrain + ntest
         noise = random.normal(obs_key, (nsamples, nout)) * obs_noise
-
-    Y = Phi @ w + noise
+        Y = Y + noise
 
     X_train = Phi[:ntrain]
     X_test = Phi[ntrain:]

@@ -1,18 +1,15 @@
-import warnings
-import chex
-from jax import jit, random, lax, tree_map, vmap
-from jax.tree_util import tree_flatten, tree_unflatten
+import jax.numpy as jnp
+from jax import jit, random, lax, tree_map
 
 import blackjax.nuts as nuts
 import blackjax.stan_warmup as stan_warmup
 
-import jax.numpy as jnp
+import chex
+import warnings
+from typing import Any, NamedTuple
 
-import typing_extensions
-from typing import Any, NamedTuple, Callable
-
-from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
+from seql.agents.agent_utils import Memory
+from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Samples = Any
@@ -83,9 +80,9 @@ class BlackJaxNutsAgent(Agent):
                                 x, y,
                                 self.model_fn)
             lp = logprior(params)
-            return -(ll + lp)
+            return ll + lp
 
-        self.logprob_fn = logprob_fn
+        self.logprob = logprob_fn
         self.loglikelihood = loglikelihood
         self.logprior = logprior
 
@@ -115,15 +112,15 @@ class BlackJaxNutsAgent(Agent):
             return belief, Info()
 
         @jit
-        def partial_potential_fn(params):
-            return self.logprob_fn(params, x_, y_)
+        def partial_logprob(params):
+            return self.logprob(params, x_, y_)
 
         warmup_key, sample_key = random.split(key)
 
         state = nuts.new_state(belief.state.position,
-                               partial_potential_fn)
+                               partial_logprob)
 
-        kernel_generator = lambda step_size, inverse_mass_matrix: nuts.kernel(partial_potential_fn,
+        kernel_generator = lambda step_size, inverse_mass_matrix: nuts.kernel(partial_logprob,
                                                                               step_size,
                                                                               inverse_mass_matrix)
         final, (step_size, inverse_mass_matrix), info = stan_warmup.run(warmup_key,
@@ -132,7 +129,7 @@ class BlackJaxNutsAgent(Agent):
                                                                               self.nwarmup)
 
         # Inference
-        nuts_kernel = jit(nuts.kernel(partial_potential_fn,
+        nuts_kernel = jit(nuts.kernel(partial_logprob,
                                       step_size,
                                       inverse_mass_matrix))
 
@@ -141,7 +138,7 @@ class BlackJaxNutsAgent(Agent):
                                        state,
                                        self.nsamples)
 
-        belief_state = BeliefState(tree_map(lambda x: jnp.mean(x, axis=0), states),
+        belief_state = BeliefState(final,
                                    step_size,
                                    inverse_mass_matrix,
                                    tree_map(lambda x: x[-self.nlast:], states))
@@ -150,20 +147,4 @@ class BlackJaxNutsAgent(Agent):
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):
-
-        potential_fn = lambda params: belief.state.potential_energy
-
-        state = nuts.new_state(belief.state.position,
-                               potential_fn)
-
-        # Inference
-        nuts_kernel = jit(nuts.kernel(potential_fn,
-                                      belief.step_size,
-                                      belief.inverse_mass_matrix))
-
-        final, _ = inference_loop(key,
-                                       nuts_kernel,
-                                       state,
-                                       1)
-
-        return final.position
+        return tree_map(lambda x: x.mean(axis=0), belief.samples.position)

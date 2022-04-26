@@ -4,8 +4,8 @@ from jax import random, vmap
 import chex
 from typing import Tuple, Optional
 
-from jsl.experimental.seql.environments.sequential_data_env import SequentialDataEnvironment
-from jsl.experimental.seql.utils import gaussian_log_likelihood
+from seql.environments.sequential_data_env import SequentialDataEnvironment
+from seql.utils import gaussian_log_likelihood
 
 
 class SequentialRegressionEnvironment(SequentialDataEnvironment):

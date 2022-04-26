@@ -10,17 +10,17 @@ from jaxopt import ScipyMinimize
 from functools import partial
 from matplotlib import pyplot as plt
 
-from jsl.experimental.seql.agents.bfgs_agent import BFGSAgent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
-from jsl.experimental.seql.agents.laplace_agent import LaplaceAgent
-from jsl.experimental.seql.agents.lbfgs_agent import LBFGSAgent
-from jsl.experimental.seql.agents.sgd_agent import SGDAgent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import SGLDAgent
-from jsl.experimental.seql.agents.eekf_agent import EEKFAgent
-from jsl.experimental.seql.environments.base import make_classification_mlp_environment, make_mlp
-from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.utils import mean_squared_error
-from jsl.experimental.seql.experiments.plotting import colors
+from seql.agents.bfgs_agent import BFGSAgent
+from seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from seql.agents.laplace_agent import LaplaceAgent
+from seql.agents.lbfgs_agent import LBFGSAgent
+from seql.agents.sgd_agent import SGDAgent
+from seql.agents.sgmcmc_sgld_agent import SGLDAgent
+from seql.agents.eekf_agent import EEKFAgent
+from seql.environments.base import make_classification_mlp_environment, make_mlp
+from seql.experiments.experiment_utils import run_experiment
+from seql.utils import mean_squared_error
+from seql.experiments.plotting import colors
 from jsl.nlds.extended_kalman_filter import NLDS
 
 plt.style.use("seaborn-poster")

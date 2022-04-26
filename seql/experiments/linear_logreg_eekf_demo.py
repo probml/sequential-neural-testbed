@@ -2,9 +2,9 @@ import jax.numpy as jnp
 from jax import random
 from jsl.nlds.base import NLDS
 
-from jsl.experimental.seql.agents.eekf_agent import eekf
-from jsl.experimental.seql.environments.base import make_random_linear_classification_environment
-from jsl.experimental.seql.utils import train
+from seql.agents.eekf_agent import eekf
+from seql.environments.base import make_random_linear_classification_environment
+from seql.utils import train
 
 def fz(x): return x
 def fx(w, x): 

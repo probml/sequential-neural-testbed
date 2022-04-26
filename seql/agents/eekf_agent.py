@@ -6,10 +6,10 @@ import distrax
 
 from typing import List, Callable
 
-from jsl.experimental.seql.agents.base import Agent
+from seql.agents.base import Agent
 from jsl.nlds.base import NLDS
 from jsl.nlds.extended_kalman_filter import filter
-from jsl.experimental.seql.agents.kf_agent import BeliefState, Info
+from seql.agents.kf_agent import BeliefState, Info
 
 
 class EEKFAgent(Agent):

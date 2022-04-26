@@ -10,7 +10,7 @@ from typing import Callable
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
 
 
 def objective_fn(params: chex.ArrayTree,
