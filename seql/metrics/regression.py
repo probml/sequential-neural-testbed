@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import chex
 import distrax
 
-from jsl.experimental.seql.metrics.utils import average_sampled_log_likelihood
+from seql.metrics.utils import average_sampled_log_likelihood
 
 def gaussian_log_likelihood(mu: chex.Array,
                             cov: chex.Array,

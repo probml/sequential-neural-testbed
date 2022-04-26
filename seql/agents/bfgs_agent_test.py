@@ -9,7 +9,7 @@ import itertools
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.bfgs_agent import BFGSAgent
+from seql.agents.bfgs_agent import BFGSAgent
 
 
 class BFGSTest(parameterized.TestCase):

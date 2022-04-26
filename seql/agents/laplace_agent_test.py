@@ -10,8 +10,8 @@ from functools import partial
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.laplace_agent import LaplaceAgent
-from jsl.experimental.seql.utils import mean_squared_error
+from seql.agents.laplace_agent import LaplaceAgent
+from seql.utils import mean_squared_error
 
 
 class LaplaceAgentTest(parameterized.TestCase):

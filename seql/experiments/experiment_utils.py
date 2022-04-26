@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 import chex
 from typing import List, Callable, Tuple
 
-from jsl.experimental.seql.utils import train
-from jsl.experimental.seql.agents.base import Agent
-from jsl.experimental.seql.environments.sequential_data_env import SequentialDataEnvironment
+from seql.utils import train
+from seql.agents.base import Agent
+from seql.environments.sequential_data_env import SequentialDataEnvironment
 
 
 class MLP(nn.Module):

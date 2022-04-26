@@ -10,8 +10,8 @@ from typing import Any, NamedTuple
 
 import warnings
 
-from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn
+from seql.agents.agent_utils import Memory
+from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn
 
 Params = Any
 Optimizer = NamedTuple

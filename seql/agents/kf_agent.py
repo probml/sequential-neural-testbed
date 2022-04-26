@@ -10,7 +10,7 @@ import distrax
 import chex
 from typing import NamedTuple
 
-from jsl.experimental.seql.agents.base import Agent
+from seql.agents.base import Agent
 from jsl.lds.kalman_filter import LDS, kalman_filter
 
 

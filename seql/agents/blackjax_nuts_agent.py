@@ -11,8 +11,8 @@ import jax.numpy as jnp
 import typing_extensions
 from typing import Any, NamedTuple, Callable
 
-from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
+from seql.agents.agent_utils import Memory
+from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Samples = Any

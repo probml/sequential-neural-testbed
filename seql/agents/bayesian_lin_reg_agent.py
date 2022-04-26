@@ -1,5 +1,5 @@
 from jax import config
-from jsl.experimental.seql.agents.agent_utils import Memory
+from seql.agents.agent_utils import Memory
 
 config.update('jax_default_matmul_precision', 'float32')
 
@@ -11,8 +11,8 @@ import chex
 from typing import NamedTuple, Tuple
 
 # Local imports
-from jsl.experimental.seql.agents.base import Agent
-from jsl.experimental.seql.agents.kf_agent import BeliefState
+from seql.agents.base import Agent
+from seql.agents.kf_agent import BeliefState
 
 
 class Info(NamedTuple):

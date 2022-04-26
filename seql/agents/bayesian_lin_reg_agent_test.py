@@ -9,7 +9,7 @@ import itertools
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.bayesian_lin_reg_agent import BayesianReg
+from seql.agents.bayesian_lin_reg_agent import BayesianReg
 
 
 class BayesLinRegTest(parameterized.TestCase):

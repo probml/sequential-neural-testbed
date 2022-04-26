@@ -8,9 +8,9 @@ from typing import Callable, List, Tuple, Union
 
 from sklearn.preprocessing import PolynomialFeatures
 
-from jsl.experimental.seql.environments.sequential_classification_env import SequentialClassificationEnvironment
-from jsl.experimental.seql.environments.sequential_regression_env import SequentialRegressionEnvironment
-from jsl.experimental.seql.environments.sequential_torch_env import SequentialTorchEnvironment
+from seql.environments.sequential_classification_env import SequentialClassificationEnvironment
+from seql.environments.sequential_regression_env import SequentialRegressionEnvironment
+from seql.environments.sequential_torch_env import SequentialTorchEnvironment
 
 
 def make_gaussian_sampler(loc: Union[chex.Array, float],

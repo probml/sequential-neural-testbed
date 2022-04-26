@@ -9,7 +9,7 @@ import itertools
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from jsl.experimental.seql.agents.kf_agent import KalmanFilterRegAgent
+from seql.agents.kf_agent import KalmanFilterRegAgent
 
 
 class KalmanFilterTest(parameterized.TestCase):

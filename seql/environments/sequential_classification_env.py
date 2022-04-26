@@ -5,8 +5,8 @@ from jax import random, vmap
 import chex
 from typing import Tuple
 
-from jsl.experimental.seql.environments.sequential_data_env import SequentialDataEnvironment
-from jsl.experimental.seql.utils import categorical_log_likelihood
+from seql.environments.sequential_data_env import SequentialDataEnvironment
+from seql.utils import categorical_log_likelihood
 
 
 class SequentialClassificationEnvironment(SequentialDataEnvironment):

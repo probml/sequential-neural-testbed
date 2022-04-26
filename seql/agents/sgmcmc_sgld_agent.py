@@ -9,8 +9,8 @@ from typing import Any, NamedTuple, Callable
 import warnings
 from functools import partial
 
-from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
+from seql.agents.agent_utils import Memory
+from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn, ModelFn
 
 Params = Any
 Samples = Any

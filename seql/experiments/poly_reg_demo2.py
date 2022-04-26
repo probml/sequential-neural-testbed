@@ -5,10 +5,10 @@ import optax
 from matplotlib import pyplot as plt
 
 
-from jsl.experimental.seql.agents.sgd_agent import SGDAgent
-from jsl.experimental.seql.environments.base import make_evenly_spaced_x_sampler, \
+from seql.agents.sgd_agent import SGDAgent
+from seql.environments.base import make_evenly_spaced_x_sampler, \
     make_random_poly_regression_environment
-from jsl.experimental.seql.utils import mean_squared_error, train
+from seql.utils import mean_squared_error, train
 
 
 plt.style.use("seaborn-poster")

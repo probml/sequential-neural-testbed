@@ -7,17 +7,17 @@ from jaxopt import ScipyMinimize
 from functools import partial
 from matplotlib import pyplot as plt
 
-from jsl.experimental.seql.agents.bfgs_agent import bfgs_agent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
-from jsl.experimental.seql.agents.laplace_agent import laplace_agent
-from jsl.experimental.seql.agents.lbfgs_agent import lbfgs_agent
-from jsl.experimental.seql.agents.sgd_agent import sgd_agent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import sgld_agent
-from jsl.experimental.seql.environments.base import make_evenly_spaced_x_sampler, \
+from seql.agents.bfgs_agent import bfgs_agent
+from seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
+from seql.agents.laplace_agent import laplace_agent
+from seql.agents.lbfgs_agent import lbfgs_agent
+from seql.agents.sgd_agent import sgd_agent
+from seql.agents.sgmcmc_sgld_agent import sgld_agent
+from seql.environments.base import make_evenly_spaced_x_sampler, \
     make_random_poly_regression_environment
-from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.experiments.plotting import plot_regression_posterior_predictive
-from jsl.experimental.seql.utils import mean_squared_error
+from seql.experiments.experiment_utils import run_experiment
+from seql.experiments.plotting import plot_regression_posterior_predictive
+from seql.utils import mean_squared_error
 
 
 class MLP(nn.Module):

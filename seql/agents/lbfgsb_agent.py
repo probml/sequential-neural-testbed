@@ -9,9 +9,9 @@ from functools import partial
 
 import warnings
 
-from jsl.experimental.seql.agents.agent_utils import Memory
-from jsl.experimental.seql.agents.base import Agent
-from jsl.experimental.seql.utils import mean_squared_error
+from seql.agents.agent_utils import Memory
+from seql.agents.base import Agent
+from seql.utils import mean_squared_error
 
 Params = Any
 

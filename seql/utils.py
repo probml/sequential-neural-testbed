@@ -8,9 +8,9 @@ import optax
 import chex
 from typing import NamedTuple, Callable, Optional, Tuple
 
-from jsl.experimental.seql.agents.base import Agent
-from jsl.experimental.seql.environments.sequential_data_env import SequentialDataEnvironment
-from jsl.experimental.seql.metrics.regression import gaussian_sample_kl
+from seql.agents.base import Agent
+from seql.environments.sequential_data_env import SequentialDataEnvironment
+from seql.metrics.regression import gaussian_sample_kl
 
 
 Belief = NamedTuple

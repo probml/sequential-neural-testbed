@@ -7,17 +7,17 @@ from matplotlib import pyplot as plt
 
 import optax
 
-from jsl.experimental.seql.agents.bfgs_agent import bfgs_agent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
-from jsl.experimental.seql.agents.lbfgs_agent import lbfgs_agent
-from jsl.experimental.seql.agents.scikit_log_reg_agent import scikit_log_reg_agent
-from jsl.experimental.seql.agents.sgd_agent import sgd_agent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import sgld_agent
-from jsl.experimental.seql.environments.base import make_random_poly_classification_environment
-from jsl.experimental.seql.experiments.bimodal_reg_demo import loglikelihood_fn
-from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.experiments.plotting import colors
-from jsl.experimental.seql.utils import cross_entropy_loss
+from seql.agents.bfgs_agent import bfgs_agent
+from seql.agents.blackjax_nuts_agent import blackjax_nuts_agent
+from seql.agents.lbfgs_agent import lbfgs_agent
+from seql.agents.scikit_log_reg_agent import scikit_log_reg_agent
+from seql.agents.sgd_agent import sgd_agent
+from seql.agents.sgmcmc_sgld_agent import sgld_agent
+from seql.environments.base import make_random_poly_classification_environment
+from seql.experiments.bimodal_reg_demo import loglikelihood_fn
+from seql.experiments.experiment_utils import run_experiment
+from seql.experiments.plotting import colors
+from seql.utils import cross_entropy_loss
 
 
 def model_fn(w, x):

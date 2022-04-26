@@ -9,7 +9,7 @@ import chex
 
 import os
 
-#from jsl.experimental.seql.utils import classification_loss, regression_loss
+#from seql.utils import classification_loss, regression_loss
 
 
 def collate_fn(batch: Any):

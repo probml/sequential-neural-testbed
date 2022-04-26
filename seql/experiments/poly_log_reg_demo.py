@@ -6,16 +6,16 @@ from matplotlib import pyplot as plt
 import optax
 from sklearn.preprocessing import PolynomialFeatures
 
-from jsl.experimental.seql.agents.eekf_agent import EEKFAgent
-from jsl.experimental.seql.agents.bfgs_agent import BFGSAgent
-from jsl.experimental.seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
-from jsl.experimental.seql.agents.lbfgs_agent import LBFGSAgent
-from jsl.experimental.seql.agents.sgd_agent import SGDAgent
-from jsl.experimental.seql.agents.sgmcmc_sgld_agent import SGLDAgent
-from jsl.experimental.seql.environments.base import make_random_poly_classification_environment
-from jsl.experimental.seql.experiments.experiment_utils import run_experiment
-from jsl.experimental.seql.experiments.plotting import sort_data
-from jsl.experimental.seql.utils import cross_entropy_loss
+from seql.agents.eekf_agent import EEKFAgent
+from seql.agents.bfgs_agent import BFGSAgent
+from seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from seql.agents.lbfgs_agent import LBFGSAgent
+from seql.agents.sgd_agent import SGDAgent
+from seql.agents.sgmcmc_sgld_agent import SGLDAgent
+from seql.environments.base import make_random_poly_classification_environment
+from seql.experiments.experiment_utils import run_experiment
+from seql.experiments.plotting import sort_data
+from seql.utils import cross_entropy_loss
 from jsl.nlds.base import NLDS
 
 
