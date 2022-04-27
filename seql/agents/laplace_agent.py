@@ -78,12 +78,14 @@ class LaplaceAgent(Agent):
         params, info = self.solver.run(belief.mu,
                                        x=x_,
                                        y=y_)
-        partial_loss_fn = partial(self.loss_fn,
-                                    x=x_,
-                                    y=y_)
+        print(info)
 
-        Sigma = hessian(partial_loss_fn)(params)
-        return BeliefState(params, tree_map(jnp.squeeze, Sigma)), info
+        def partial_loss_fn(params):
+            print(len(x_))
+            return self.loss_fn(params, x_, y_) / len(x_) / 1000.
+        print(partial_loss_fn(tree_map(jnp.squeeze, params)))
+        Sigma = hessian(partial_loss_fn)(tree_map(jnp.squeeze, params))
+        return BeliefState(params, Sigma), info
 
     def sample_params(self,
                       key: chex.PRNGKey,
