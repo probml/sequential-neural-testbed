@@ -11,10 +11,10 @@ Examples:
 ### Models
 - **Linear regression(with fixed basis function)**
 
- <img src="https://latex.codecogs.com/svg.image?N(y|w'&space;phi(x),&space;sigma^2)&space;" title="https://latex.codecogs.com/svg.image?N(y|w' phi(x), sigma^2) " /> where <img src="https://latex.codecogs.com/svg.image?phi(x)" title="https://latex.codecogs.com/svg.image?phi(x)" /> is specified.
+<img src="https://latex.codecogs.com/svg.image?N(y|w'\phi(x),&space;\sigma^2)" title="https://latex.codecogs.com/svg.image?N(y|w'\phi(x), \sigma^2)" /> where <img src="https://latex.codecogs.com/svg.image?\phi(x)" title="https://latex.codecogs.com/svg.image?\phi(x)" /> is specified.
 - **Logistic regression (with fixed basis function)**
 
- <img src="https://latex.codecogs.com/svg.image?Cat(y|softmax(W'&space;phi(x))" title="https://latex.codecogs.com/svg.image?Cat(y|softmax(W' phi(x))" />, where <img src="https://latex.codecogs.com/svg.image?phi(x)" title="https://latex.codecogs.com/svg.image?phi(x)" /> is specified. 
+ <img src="https://latex.codecogs.com/svg.image?Cat(y&space;|&space;softmax(w'&space;\phi(x))" title="https://latex.codecogs.com/svg.image?Cat(y | softmax(w' \phi(x))" />, where <img src="https://latex.codecogs.com/svg.image?\phi(x)" title="https://latex.codecogs.com/svg.image?\phi(x)" /> is specified. 
 - **MLP**
 - **CNN**
 
