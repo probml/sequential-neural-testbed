@@ -8,13 +8,17 @@ We extend the [neural testbed](https://github.com/deepmind/neural_testbed) from 
 An agent is a likelihood model of the form p(y|x,theta) and an inference algorithm for the posterior p(theta|D(1:t))
 Examples:
 
-Models:
-- Linear regresson (with fixed basis function): N(y|w' phi(x), sigma^2) where phi(x) is specified.
-- Logistic regresson (with fixed basis function): Cat(y|softmax(W' phi(x))),  where phi(x) is specified. 
-- MLP
-- CNN
--  
-Posterior inference algorithms:
+### Models
+- **Linear regression(with fixed basis function)**
+
+ <img src="https://latex.codecogs.com/svg.image?N(y|w'&space;phi(x),&space;sigma^2)&space;" title="https://latex.codecogs.com/svg.image?N(y|w' phi(x), sigma^2) " /> where <img src="https://latex.codecogs.com/svg.image?phi(x)" title="https://latex.codecogs.com/svg.image?phi(x)" /> is specified.
+- **Logistic regression (with fixed basis function)**
+
+ <img src="https://latex.codecogs.com/svg.image?Cat(y|softmax(W'&space;phi(x))" title="https://latex.codecogs.com/svg.image?Cat(y|softmax(W' phi(x))" />, where <img src="https://latex.codecogs.com/svg.image?phi(x)" title="https://latex.codecogs.com/svg.image?phi(x)" /> is specified. 
+- **MLP**
+- **CNN**
+
+### Posterior inference algorithms:
 
 - SGD 
 - "Deep ensembles" ie SGD on multiple copies of the model
