@@ -106,7 +106,7 @@ def callback_fn(agent, env, agent_name, **kwargs):
         # Plot training data
         ax.scatter(x[indices, 1],
                    x[indices, 2],
-                   s=500.,
+                   s=240.,
                    c=color,
                    edgecolor="black")
     plt.tight_layout()
