@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax import tree_map, vmap
+from jax import tree_map, vmap, random
 
 from sgmcmcjax.samplers import build_sgld_sampler
 
@@ -33,8 +33,9 @@ class SGLDAgent(Agent):
                  dt: float,
                  batch_size: int,
                  nsamples: int,
-                 logprior: LogpriorFn=lambda params: 0.,
-                 nlast: int = 10,
+                 logprior: LogpriorFn = lambda params: 0.,
+                 nlast: int = 500,
+                 step_between_params: int = 1,
                  min_n_samples: int = 1,
                  buffer_size: int = 0,
                  obs_noise=0.1,
@@ -47,6 +48,8 @@ class SGLDAgent(Agent):
         self.buffer_size = buffer_size
         self.min_n_samples = min_n_samples
         self.nlast = nlast
+        self.step_between_params = step_between_params
+
         self.batch_size = batch_size
         self.nsamples = nsamples
         self.dt = dt
@@ -85,11 +88,13 @@ class SGLDAgent(Agent):
                           self.nsamples,
                           belief.params)
 
-        final = tree_map(lambda x: x.mean(axis=0),
-                         samples)
-        samples = tree_map(lambda x: x[-self.buffer_size:],
+        final = tree_map(lambda x: x[-1],
                            samples)
 
+        indices = jnp.arange(1, self.nlast + 1, self.step_between_params)
+        samples = tree_map(lambda x, index: x[-index],
+                           samples, indices)
+  
         return BeliefState(final, samples, sampler), Info
 
     def get_posterior_cov(self,
@@ -107,10 +112,6 @@ class SGLDAgent(Agent):
                       key: chex.PRNGKey,
                       belief: BeliefState):
 
-        if belief.sampler is None:
-            return belief.params
-
-        theta = belief.sampler(key,
-                               1,
-                               belief.params)
-        return theta[0]
+        
+        index = random.choice(key, jnp.arange(self.nlast))
+        return tree_map(lambda x: x[index], belief.samples)

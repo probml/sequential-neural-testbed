@@ -1,10 +1,12 @@
 import jax.numpy as jnp
-from jax import random
 
 import seaborn as sns
 from functools import reduce
+from sklearn.preprocessing import PolynomialFeatures
 
-agents = {"kf": 0,
+
+agents = {
+          "kf": 0,
           "eekf": 0,
           "exact bayes": 1,
           "sgd": 2,
@@ -13,7 +15,8 @@ agents = {"kf": 0,
           "lbfgs": 5,
           "nuts": 6,
           "sgld": 7,
-          "scikit": 8
+          "scikit": 8,
+          "ensemble":9
           }
 
 colors = {k: sns.color_palette("Paired")[v]
@@ -39,45 +42,58 @@ def sort_data(x, y):
 
 
 def plot_regression_posterior_predictive(ax,
+                                         X,
+                                         y,
+                                         X_line,
                                          posterior_predictive_outputs,
-                                         env,
+                                         ground_truth,
                                          agent_name,
                                          t):
     nprev = reduce(lambda x, y: x * y,
-                   env.X_test[:t].shape[:-1])
+                   X[:t].shape[:-1])
 
-    X_test, y_test = env.X_test[t], env.y_test[t]
+    X_test, y_test = X[:t+1], y[:t+1]
 
     nfeatures = X_test.shape[-1]
-    prev_x = X_test.reshape((-1, nfeatures))[:nprev, 1]
+    prev_x = X_test.reshape((-1, nfeatures))[:nprev]
     prev_y = y_test.reshape((-1, 1))[:nprev]
 
-    cur_x = X_test.reshape((-1, nfeatures))[nprev:, 1]
+    cur_x = X_test.reshape((-1, nfeatures))[nprev:]
     cur_y = y_test.reshape((-1, 1))[nprev:]
 
     # Plot training data
-    ax.scatter(prev_x, prev_y, c="#40476D")
-    ax.scatter(cur_x, cur_y, c="#c33149")
+    '''ax.scatter(prev_x[:, 1],
+               prev_y,
+               c="#40476D")'''
+    
+    ax.scatter(cur_x[:, 1],
+               cur_y,
+               c="#c33149",
+               marker="^")
 
-    X_test, y_test = sort_data(X_test, y_test)
+    X_test, y_test = sort_data(cur_x, cur_y)
 
     ypred, error = posterior_predictive_outputs
 
-    ground_truth = env.true_model(X_test)
-    ax.plot(jnp.squeeze(X_test[:, 1]),
-            jnp.squeeze(ground_truth),
-            color="#72A276",
-            linewidth=5)
+    ypred = jnp.squeeze(ypred)
+    error = jnp.squeeze(error)
 
-    ax.errorbar(jnp.squeeze(X_test[:, 1]),
-                jnp.squeeze(ypred),
-                yerr=jnp.squeeze(error),
-                color=colors[agent_name])
-    ax.fill_between(jnp.squeeze(X_test[:, 1]),
-                    jnp.squeeze(ypred) + jnp.squeeze(error),
-                    jnp.squeeze(ypred) - jnp.squeeze(error),
+    ax.plot(X_line,
+            ground_truth,
+            color="k")
+
+    
+    color = colors[agent_name]
+
+    ax.plot(X_line,
+            ypred,
+            color=color)
+
+    ax.fill_between(X_line,
+                    ypred + error,
+                    ypred - error,
                     alpha=0.2,
-                    color=colors[agent_name])
+                    color=color)
 
 
 def plot_classification_2d(ax,

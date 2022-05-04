@@ -5,7 +5,6 @@ import distrax
 
 import chex
 from typing import Any, NamedTuple, Optional
-from functools import partial
 
 import warnings
 
@@ -78,12 +77,10 @@ class LaplaceAgent(Agent):
         params, info = self.solver.run(belief.mu,
                                        x=x_,
                                        y=y_)
-        print(info)
 
         def partial_loss_fn(params):
-            print(len(x_))
-            return self.loss_fn(params, x_, y_) / len(x_) / 1000.
-        print(partial_loss_fn(tree_map(jnp.squeeze, params)))
+            return self.loss_fn(params, x_, y_) / len(x_) /  10000.
+
         Sigma = hessian(partial_loss_fn)(tree_map(jnp.squeeze, params))
         return BeliefState(params, Sigma), info
 

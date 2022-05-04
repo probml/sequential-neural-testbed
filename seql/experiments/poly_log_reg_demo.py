@@ -19,17 +19,12 @@ from seql.utils import cross_entropy_loss
 from jsl.nlds.base import NLDS
 
 
-def fz(x): return x
-
-def fx(w, x):
-    return (x @ w)[None, ...]
-
-
-def Rt(w, x): return (x @ w * (1 - x @ w))[None, None]
+def fz(x):
+    return x
 
 
 def model_fn(w, x):
-    return nn.log_softmax(x @ w, axis=-1)
+    return nn.softmax(x @ w, axis=-1)
 
 
 def logprior_fn(params, strength=0.2):
@@ -47,6 +42,20 @@ def print_accuracy(logprobs, ytest):
     predictions = jnp.where(logprobs > jnp.log(0.5), 1, 0)
     print("Accuracy: ", jnp.mean(jnp.argmax(predictions, axis=-1) == ytest_))
 
+def get_grid(min_x, max_x, min_y, max_y):
+    # define the x and y scale
+    x1grid = jnp.arange(min_x, max_x, 0.1)
+    x2grid = jnp.arange(min_y, max_y, 0.1)
+
+    # create all of the lines and rows of the grid
+    xx, yy = jnp.meshgrid(x1grid, x2grid)
+
+    # flatten each grid to a vector
+    r1, r2 = xx.flatten(), yy.flatten()
+    r1, r2 = r1.reshape((len(r1), 1)), r2.reshape((len(r2), 1))
+    # horizontal stack vectors to create x1,x2 input for the model
+    grid = jnp.hstack((r1, r2))
+    return xx, yy, grid
 
 def callback_fn(agent, env, agent_name, **kwargs):
     if "subplot_idx" not in kwargs and kwargs["t"] not in kwargs["timesteps"]:
@@ -62,40 +71,25 @@ def callback_fn(agent, env, agent_name, **kwargs):
 
     belief = kwargs["belief"]
 
+    
+    min_x, max_x = -3, 3
+    min_y, max_y = -3, 3
+    x, y, grid = get_grid(min_x, max_x, min_y, max_y)
+
     poly = PolynomialFeatures(kwargs["degree"])
-    *_, nfeatures = env.X_train.shape
-    X = env.X_test.reshape((-1, nfeatures))
-    X = jnp.vstack([env.X_train.reshape((-1, nfeatures)), X])
-    min_x, max_x = jnp.min(X[:, 1]), jnp.max(X[:, 1])
-    min_y, max_y = jnp.min(X[:, 2]), jnp.max(X[:, 2])
-
-    # define the x and y scale
-    x1grid = jnp.arange(min_x, max_x, 0.1)
-    x2grid = jnp.arange(min_y, max_y, 0.1)
-
-    # create all of the lines and rows of the grid
-    xx, yy = jnp.meshgrid(x1grid, x2grid)
-
-    # flatten each grid to a vector
-    r1, r2 = xx.flatten(), yy.flatten()
-    r1, r2 = r1.reshape((len(r1), 1)), r2.reshape((len(r2), 1))
-    # horizontal stack vectors to create x1,x2 input for the model
-    grid = jnp.hstack((r1, r2))
-    x = poly.fit_transform(grid)
-
     grid_preds = agent.posterior_predictive_mean(random.PRNGKey(0),
                                     belief,
-                                    x,
-                                    10,
-                                    5)
+                                    poly.fit_transform(grid),
+                                    200,
+                                    100)
 
-    # keep just the probabilities for class 0
-    grid_preds = grid_preds[:, 0]
+    # keep just the probabilities for class 1
+    grid_preds = grid_preds[:, 1]
     # reshape the predictions back into a grid
-    grid_preds = grid_preds.reshape(xx.shape)
+    grid_preds = grid_preds.reshape(x.shape)
 
     # plot the grid of x, y and z values as a surface
-    c = ax.contourf(xx, yy, grid_preds, cmap='RdBu')
+    c = ax.contourf(x, y, grid_preds, cmap="bwr", alpha=0.6)
     plt.colorbar(c)
 
     if "title" in kwargs:
@@ -106,25 +100,31 @@ def callback_fn(agent, env, agent_name, **kwargs):
     t = kwargs["t"]
 
     x, y = sort_data(env.X_test[:t + 1], env.y_test[:t + 1])
-    nclasses = y.max()
-
-    for cls in range(nclasses + 1):
+    colors = ["#86bbd8", "#E39191"]
+    for cls, color in enumerate(colors):
         indices = jnp.argwhere(y == cls)
-
         # Plot training data
         ax.scatter(x[indices, 1],
-                   x[indices, 2])
+                   x[indices, 2],
+                   s=500.,
+                   c=color,
+                   edgecolor="black")
+    plt.tight_layout()
     plt.savefig("jakjs.png")
 
 
 def initialize_params(agent_name, **kwargs):
     nfeatures = kwargs["nfeatures"]
-    mu0 = random.normal(random.PRNGKey(0), (nfeatures, 2))
-    if agent_name == "bayes" or agent_name == "eekf":
-        mu0 = jnp.zeros((nfeatures, 2))
-        Sigma0 = jnp.eye(nfeatures)
+    nclasses = kwargs["nclasses"]
+
+    mu0 = random.normal(random.PRNGKey(0), (nfeatures, nclasses))
+
+    if agent_name == "eekf":
+        mu0 = jnp.ravel(mu0)
+        Sigma0 = jnp.eye(nfeatures * nclasses)
         initial_params = (mu0, Sigma0)
     else:
+            
         initial_params = (mu0,)
 
     return initial_params
@@ -155,23 +155,29 @@ def main():
     buffer_size = ntrain
 
     input_dim = 10
-    Pt = jnp.eye(input_dim) * 0.0
-    P0 = jnp.eye(input_dim) * 2.0
-    mu0 = jnp.zeros((input_dim,))
-    nlds = NLDS(fz, fx, Pt, Rt, mu0, P0)
+    nparams = input_dim * nclasses
+    Q = jnp.eye(nparams) * 1e-4
+    R = jnp.eye(nclasses) * obs_noise
+
     is_classifier = True
 
+    def eekf_model_fn(params, x):
+        return model_fn(params.reshape((input_dim, nclasses)), x)
+
+    # initial random guess
+    nlds = NLDS(fz, eekf_model_fn, Q, R)
     eekf = EEKFAgent(nlds,
-                     model_fn,
+                     eekf_model_fn,
                      obs_noise,
                      is_classifier=is_classifier)
 
-    optimizer = optax.adam(1e-2)
-
+    
     #tau = 1.
     #strength = obs_noise / tau
 
     nepochs = 20
+    optimizer = optax.adam(1e-1)
+
     sgd = SGDAgent(loglikelihood_fn,
     model_fn,
     logprior_fn,
@@ -238,9 +244,8 @@ def main():
 
 
     agents = {
-        #"eekf": eekf,
+        "eekf": eekf,
         "sgld": sgld,
-        #"scikit": scikit_agent,
         "sgd": sgd,
         "bfgs": bfgs,
         "lbfgs": lbfgs,
@@ -278,7 +283,8 @@ def main():
                    obs_noise=obs_noise,
                    batch_agents=batch_agents,
                    timesteps=timesteps,
-                   degree=degree)
+                   degree=degree,
+                   nclasses=nclasses)
 
 
 if __name__ == "__main__":

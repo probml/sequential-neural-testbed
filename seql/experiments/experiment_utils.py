@@ -77,11 +77,15 @@ def get_fig_and_axes(nrows, ncols, figsize):
     if nrows != 1:
         fig, axes = plt.subplots(nrows=nrows,
                                      ncols=1,
-                                     figsize=figsize)
+                                     figsize=figsize,
+                                     sharey='row',
+                                     sharex='row')
     else:
         fig, axes = plt.subplots(nrows=nrows,
                                      ncols=ncols,
-                                     figsize=figsize)
+                                     figsize=figsize,
+                                     sharey='row',
+                                     sharex='row')
         axes = axes.flatten()
 
     return fig, axes

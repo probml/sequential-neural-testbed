@@ -54,8 +54,7 @@ class EEKFAgent(Agent):
                       key: chex.PRNGKey,
                       belief: BeliefState):
         mu, Sigma = belief.mu, belief.Sigma
-        print(mu.shape, Sigma.shape)
-        mvn = distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu, axis=-1),
+        mvn = distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu),
                                                        Sigma)
         theta = mvn.sample(seed=key)
         theta = theta.reshape(mu.shape)

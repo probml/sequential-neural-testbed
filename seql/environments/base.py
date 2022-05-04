@@ -152,7 +152,7 @@ def make_random_poly_classification_environment(key: chex.PRNGKey,
                                                 x_train_generator: Callable = random.normal,
                                                 x_test_generator: Callable = random.normal,
                                                 shuffle: bool = False):
-    train_key, test_key, env_key = random.split(key, 3)
+    train_key, test_key, env_key, output_key = random.split(key, 4)
 
     X_train = x_train_generator(train_key, (ntrain, nfeatures))
     X_test = x_test_generator(test_key, (ntest, nfeatures))
@@ -163,15 +163,22 @@ def make_random_poly_classification_environment(key: chex.PRNGKey,
     X = jnp.vstack([X_train, X_test])
     poly = PolynomialFeatures(degree)
     Phi = jnp.array(poly.fit_transform(X), dtype=jnp.float32)
-
+    
     D = Phi.shape[-1]
-    w = random.normal(key, (D, nclasses))
+    w = random.normal(key, (D, nclasses)) + 5
     if obs_noise > 0.0:
         nsamples = ntrain + ntest
         noise = random.normal(key, (nsamples, nclasses)) * obs_noise
+    else:
+        noise = 0.
+    logprobs = nn.softmax(Phi @ w + noise)
 
-    logprobs = nn.log_softmax(Phi @ w + noise)
-    Y = jnp.argmax(logprobs, axis=-1).reshape((-1, 1))
+    # Generate data.
+    def sample_output(probs: chex.Array, key: chex.PRNGKey) -> chex.Array:
+        return random.choice(key, nclasses, shape=(1,), p=probs)
+    
+    keys = random.split(output_key, ntrain + ntest)
+    Y = vmap(sample_output)(logprobs, keys)
 
     X_train = Phi[:ntrain]
     X_test = Phi[ntrain:]
@@ -240,9 +247,18 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
     y_test = Y[ntrain:]
 
     if shuffle:
-        env_key, key = random.split(key)
-    else:
-        env_key = None
+        train_key, test_key = random.split(key)
+        train_indices = random.permutation(train_key,
+                                           jnp.arange(ntrain))
+        test_indices = random.permutation(test_key,
+                                          jnp.arange(ntest))
+
+        X_train = X_train[train_indices]
+        y_train = y_train[train_indices]
+
+        X_test = X_test[test_indices]
+        y_test = y_test[test_indices]
+
 
     def true_model(x):
         return x @ w
@@ -254,8 +270,7 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
                                           true_model,
                                           train_batch_size,
                                           test_batch_size,
-                                          obs_noise=obs_noise,
-                                          key=env_key)
+                                          obs_noise=obs_noise)
 
     return env
 

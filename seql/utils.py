@@ -86,7 +86,7 @@ def train(key: chex.PRNGKey,
 
     for t, rng_key in enumerate(keys):
         X_train, Y_train, X_test, Y_test = env.get_data(t)
-
+        print(X_train.shape)
         update_key, data_key, joint_key = random.split(rng_key, 3)
 
 

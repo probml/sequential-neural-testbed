@@ -5,19 +5,21 @@ import optax
 from jaxopt import ScipyMinimize
 
 from matplotlib import pyplot as plt
+from seql.agents.base import Agent
 
 from seql.agents.bayesian_lin_reg_agent import BayesianReg
 from seql.agents.bfgs_agent import BFGSAgent
 from seql.agents.blackjax_nuts_agent import BlackJaxNutsAgent
+from seql.agents.ensemble_agent import EnsembleAgent
 from seql.agents.kf_agent import KalmanFilterRegAgent
 from seql.agents.laplace_agent import LaplaceAgent
-from seql.agents.lbfgs_agent import LBFGSAgent
 from seql.agents.sgd_agent import SGDAgent
 from seql.agents.sgmcmc_sgld_agent import SGLDAgent
-from seql.environments.base import make_evenly_spaced_x_sampler, \
+from seql.environments.base import make_evenly_spaced_x_sampler, make_gaussian_sampler, \
     make_random_poly_regression_environment
+from seql.environments.sequential_data_env import SequentialDataEnvironment
 from seql.experiments.experiment_utils import run_experiment
-from seql.experiments.plotting import plot_regression_posterior_predictive
+from seql.experiments.plotting import plot_regression_posterior_predictive, sort_data
 from seql.utils import mean_squared_error
 
 
@@ -25,6 +27,7 @@ plt.style.use("seaborn-poster")
 
 
 def model_fn(w, x):
+    print(w.shape, x.shape)
     return x @ w
 
 def logprior_fn(params):
@@ -35,32 +38,65 @@ def loglikelihood_fn(params, x, y, model_fn):
     return -mean_squared_error(params, x, y, model_fn)
 
 
-def callback_fn(agent, env, agent_name, **kwargs):
+def callback_fn(agent: Agent,
+                env: SequentialDataEnvironment,
+                agent_name: str,
+                **kwargs):
+
+    timesteps = kwargs["timesteps"]
+
     if "subplot_idx" not in kwargs and kwargs["t"] not in kwargs["timesteps"]:
         return
-    elif "subplot_idx" not in kwargs:
-        subplot_idx = kwargs["timesteps"].index(kwargs["t"]) + kwargs["idx"] * kwargs["ncols"] + 1
+
+    nrows, ncols  = kwargs["nrows"], kwargs["ncols"]
+    t = kwargs["t"]
+    
+    if "subplot_idx" not in kwargs:
+        subplot_idx = timesteps.index(t) + kwargs["idx"] * ncols + 1
     else:
         subplot_idx = kwargs["subplot_idx"]
 
-    ax = kwargs["fig"].add_subplot(kwargs["nrows"],
-                                   kwargs["ncols"],
-                                   subplot_idx)
+    fig = kwargs["fig"]
+
+    if subplot_idx % ncols != 1:
+        ax = fig.add_subplot(nrows,
+                             ncols,
+                             subplot_idx,
+                             sharey=plt.gca(),
+                             sharex=plt.gca())
+    else:
+        ax = fig.add_subplot(nrows,
+                             ncols,
+                             subplot_idx)
+    belief = kwargs["belief"]
+
+    '''X_line = jnp.linspace(-3, 3, 1000)
+    poly = PolynomialFeatures(3)
+    phi = jnp.array(poly.fit_transform(X_line.reshape((-1, 1))), dtype=jnp.float32)
+    '''
+
+    phi = env.X_test[t]
+    X_test, _ = sort_data(phi, env.y_test[t])
+    outputs = env.true_model(X_test)
 
     outs = agent.posterior_predictive_mean_and_var(random.PRNGKey(0),
-                                                   kwargs["belief"],
-                                                   env.X_test[kwargs["t"]],
-                                                   10,
-                                                   5)
+                                                   belief,
+                                                   X_test,
+                                                   200,
+                                                   100)
     plot_regression_posterior_predictive(ax,
+                                         env.X_test,
+                                         env.y_test,
+                                         X_test[:, 1],
                                          outs,
-                                         env,
+                                         outputs,
                                          agent_name,
-                                         t=kwargs["t"])
+                                         t=t)
     if "title" in kwargs:
         ax.set_title(kwargs["title"], fontsize=32)
     else:
-        ax.set_title("t={}".format(kwargs["t"]), fontsize=32)
+        ax.set_title("t={}".format(t), fontsize=32)
+
     plt.tight_layout()
     plt.savefig("jaks.png")
     plt.show()
@@ -73,6 +109,9 @@ def initialize_params(agent_name, **kwargs):
         mu0 = jnp.zeros((nfeatures, 1))
         Sigma0 = jnp.eye(nfeatures)
         initial_params = (mu0, Sigma0)
+    elif agent_name =="ensemble":
+        mu0 = jnp.zeros((8,  nfeatures, 1))
+        initial_params = (mu0, mu0)
     else:
         initial_params = (mu0,)
 
@@ -83,6 +122,8 @@ def main():
     key = random.PRNGKey(0)
 
     min_val, max_val = -3, 3
+    scale = 1.2
+    x_train_generator = make_gaussian_sampler(0, scale)
     x_test_generator = make_evenly_spaced_x_sampler(max_val,
                                                     use_bias=False,
                                                     min_val=min_val)
@@ -91,7 +132,7 @@ def main():
     ntrain = 50
     ntest = 50
     batch_size = 5
-    obs_noise = 0.1
+    obs_noise = 1.
 
     env_key, run_key = random.split(key)
     env = lambda batch_size: make_random_poly_regression_environment(env_key,
@@ -101,7 +142,9 @@ def main():
                                                                      obs_noise=obs_noise,
                                                                      train_batch_size=batch_size,
                                                                      test_batch_size=batch_size,
-                                                                     x_test_generator=x_test_generator)
+                                                                     x_train_generator=x_train_generator,
+                                                                     x_test_generator=x_test_generator,
+                                                                     shuffle=True)
 
     nsteps = 10
 
@@ -134,7 +177,7 @@ def main():
                          buffer_size=buffer_size,
                          nepochs=nepochs * nsteps)
 
-    nsamples, nwarmup = 300, 200
+    nsamples, nwarmup = 500, 200
     nuts = BlackJaxNutsAgent(
         loglikelihood_fn,
         model_fn,
@@ -153,7 +196,7 @@ def main():
         obs_noise=obs_noise,
         buffer_size=buffer_size)
 
-    dt = 1e-4
+    dt = 1e-5
     sgld = SGLDAgent(
         loglikelihood_fn,
         model_fn,
@@ -184,45 +227,45 @@ def main():
                      obs_noise=obs_noise,
                      buffer_size=buffer_size)
 
-    lbfgs = LBFGSAgent(loglikelihood_fn,
-                        model_fn,
-                        logprior_fn,
-                       obs_noise=obs_noise,
-                       history_size=buffer_size)
-
     def energy_fn(params, x, y):
         logprob = loglikelihood_fn(params, x, y, model_fn)
         logprob += logprior_fn(params)
-        return -logprob
+        return -logprob/len(x)
 
     solver = ScipyMinimize(fun=energy_fn, method="BFGS")
     laplace = LaplaceAgent(solver,
                         loglikelihood_fn,
                         model_fn,
                         logprior_fn,
-                           obs_noise=obs_noise,
-                           buffer_size=buffer_size)
+                        obs_noise=obs_noise,
+                        buffer_size=buffer_size)
+    nensemble =  8
 
+    ensemble = EnsembleAgent(loglikelihood_fn,
+                             model_fn,
+                             nensemble,
+                             logprior_fn,
+                             nepochs)
 
     agents = {
+        
+        "ensemble": ensemble,
+        "laplace": laplace,
         "nuts": nuts,
-
+        "sgld": sgld,
         "kf": kf,
         "exact bayes": bayes,
         "sgd": sgd,
-        "laplace": laplace,
         "bfgs": bfgs,
-        "lbfgs": lbfgs,
-        "sgld": sgld,
     }
 
     batch_agents = {
+        "ensemble": ensemble,
         "kf": kf,
         "exact bayes": batch_bayes,
         "sgd": batch_sgd,
         "laplace": laplace,
         "bfgs": bfgs,
-        "lbfgs": lbfgs,
         "nuts": batch_nuts,
         "sgld": batch_sgld,
     }
