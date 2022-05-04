@@ -1,6 +1,6 @@
 """Tests for jsl.sent.agents.bayesian_lin_reg_agent"""
 import jax.numpy as jnp
-from jax import random
+from jax import random, vmap
 
 import chex
 
@@ -10,6 +10,45 @@ from absl.testing import absltest
 from absl.testing import parameterized
 
 from seql.agents.bayesian_lin_reg_agent import BayesianReg
+from seql.agents.kf_agent import KalmanFilterRegAgent
+from seql.environments.base import make_evenly_spaced_x_sampler, make_random_poly_regression_environment
+from seql.environments.sequential_regression_env import SequentialRegressionEnvironment
+from seql.utils import train
+
+
+
+kf_mean, kf_cov = None, None
+
+
+def callback_fn(**kwargs):
+    global kf_mean, kf_cov
+
+    mu_hist = kwargs["info"].mu_hist
+    Sigma_hist = kwargs["info"].Sigma_hist
+
+    if kf_mean is not None:
+        kf_mean = jnp.vstack([kf_mean, mu_hist])
+        kf_cov = jnp.vstack([kf_cov, Sigma_hist])
+    else:
+        kf_mean = mu_hist
+        kf_cov = Sigma_hist
+
+
+bayes_mean, bayes_cov = None, None
+
+
+def bayes_callback_fn(**kwargs):
+    global bayes_mean, bayes_cov
+
+    mu = kwargs["belief"].mu[None, ...]
+    Sigma = kwargs["belief"].Sigma[None, ...]
+
+    if bayes_mean is not None:
+        bayes_mean = jnp.vstack([bayes_mean, mu])
+        bayes_cov = jnp.vstack([bayes_cov, Sigma])
+    else:
+        bayes_mean = mu
+        bayes_cov = Sigma
 
 
 class BayesLinRegTest(parameterized.TestCase):
@@ -153,5 +192,101 @@ class BayesLinRegTest(parameterized.TestCase):
         assert jnp.any(jnp.isinf(samples)) == False
         assert jnp.any(jnp.isnan(samples)) == False
 
-    if __name__ == '__main__':
-        absltest.main()
+
+    @parameterized.parameters(itertools.product((0,),
+                                                (3, 5),
+                                                (50,),
+                                                (50,),
+                                                (0.1,),
+                                                (5,),
+                                                (5,),
+                                                (-10,),
+                                                (10,)))
+    def test_kf_vs_bayes(self,
+                        seed,
+                        degree,
+                        ntrain,
+                        ntest,
+                        obs_noise,
+                        train_batch_size,
+                        test_batch_size,
+                        min_val,
+                        max_val):
+        global kf_mean, kf_cov
+        global bayes_mean, bayes_cov
+
+        kf_mean, kf_cov = None, None
+        bayes_mean, bayes_cov = None, None
+
+        x_test_generator = make_evenly_spaced_x_sampler(max_val,
+                                                    use_bias=False,
+                                                    min_val=min_val)
+
+        key = random.PRNGKey(seed)
+        env = make_random_poly_regression_environment(key,
+                                                      degree,
+                                                      ntrain,
+                                                      ntest,
+                                                      obs_noise=obs_noise,
+                                                      train_batch_size=train_batch_size,
+                                                      test_batch_size=test_batch_size,
+                                                      x_test_generator=x_test_generator)
+
+        *_, input_dim = env.X_train.shape
+
+        nsteps = 1
+        mu0 = jnp.zeros(input_dim)
+        Sigma0 = jnp.eye(input_dim) * 10.
+
+        agent = KalmanFilterRegAgent(obs_noise,
+                                  return_history=True)
+        belief = agent.init_state(mu0, Sigma0)
+        nsamples, njoint = 1, 1
+        key = random.PRNGKey(seed)
+        kf_belief, _ = train(key,
+                             belief,
+                             agent,
+                             env,
+                             nsteps=nsteps,
+                             nsamples_output=nsamples,
+                             nsamples_input=nsamples,
+                             njoint=njoint,
+                             callback=callback_fn)
+
+        buffer_size = 1
+        agent = BayesianReg(buffer_size, obs_noise)
+        belief = agent.init_state(mu0.reshape((-1, 1)), Sigma0)
+        key = random.PRNGKey(seed)
+
+        bayes_belief, _ = train(key,
+                             belief,
+                             agent,
+                             env,
+                             nsteps=nsteps,
+                             nsamples_output=nsamples,
+                             nsamples_input=nsamples,
+                             njoint=njoint,
+                             callback=bayes_callback_fn)
+
+        assert jnp.allclose(jnp.squeeze(kf_belief.mu),
+                            jnp.squeeze(bayes_belief.mu),
+                            atol=1e-2)
+
+        assert jnp.allclose(kf_belief.Sigma,
+                            bayes_belief.Sigma)
+
+        '''# Posterior predictive distribution check
+        v_ppd = vmap(self._posterior_preditive_distribution,
+                     in_axes=(0, 0, 0, None))
+        X = jnp.squeeze(env.X_train)
+
+        bayes_ppds = v_ppd(X, bayes_mean, bayes_cov, obs_noise)
+        kf_ppds = v_ppd(X, kf_mean, kf_cov, obs_noise)
+
+        assert jnp.allclose(jnp.squeeze(bayes_ppds[0]),
+                            jnp.squeeze(kf_ppds[0]))
+        assert jnp.allclose(bayes_ppds[1],
+                            kf_ppds[1])'''
+
+if __name__ == '__main__':
+    absltest.main()

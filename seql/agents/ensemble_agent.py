@@ -4,16 +4,16 @@ from jax import jit, value_and_grad, random, vmap, tree_map
 import optax
 
 import chex
-from flax.core import frozen_dict
 import typing_extensions
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import warnings
 
 from seql.agents.agent_utils import Memory
 from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn
 
-Params = Any
+Params = chex.ArrayTree
+Prior = chex.ArrayTree
 Optimizer = NamedTuple
 
 
@@ -41,6 +41,7 @@ class LossFn(typing_extensions.Protocol):
 
 class BeliefState(NamedTuple):
     params: Params
+    prior: Prior
     opt_states: TraceState
 
 
@@ -67,6 +68,7 @@ class EnsembleAgent(Agent):
                  min_n_samples: int = 1,
                  buffer_size: int = jnp.inf,
                  obs_noise: float = 0.1,
+                 beta: float = 0.1,
                  optimizer: Optimizer = optax.adam(1e-2),
                  is_classifier: bool = False):
 
@@ -75,17 +77,15 @@ class EnsembleAgent(Agent):
         assert min_n_samples <= buffer_size
 
         self.memory = Memory(buffer_size)
-
-
         self.model_fn = model_fn
 
         def loss_fn(params: Params,
                  x: chex.Array,
                  y: chex.Array):
 
-            ll =  loglikelihood(params,
+            ll = loglikelihood(params,
                                 x, y,
-                                self.model_fn)
+                                model_fn)
             lp = logprior(params)
             return -(ll + lp)
 
@@ -97,14 +97,16 @@ class EnsembleAgent(Agent):
         self.nensembles = nensembles
         self.optimizer = optimizer
         self.buffer_size = buffer_size
+        self.beta = beta
         self.nepochs = nepochs
         self.min_n_samples = min_n_samples
         self.obs_noise = obs_noise
 
     def init_state(self,
-                   params: Params):
+                   params: Params,
+                   prior: Prior):
         opt_states = vmap(self.optimizer.init)(params)
-        return BeliefState(params, opt_states)
+        return BeliefState(params, prior, opt_states)
 
     def update(self,
                key: chex.PRNGKey,
@@ -114,7 +116,7 @@ class EnsembleAgent(Agent):
 
         assert self.buffer_size >= len(x)
         x_, y_ = self.memory.update(x, y)
-
+        
         if len(x_) < self.min_n_samples:
             warnings.warn("There should be more data.", UserWarning)
             info = Info(False, -1, jnp.inf)
@@ -125,37 +127,28 @@ class EnsembleAgent(Agent):
         keys = random.split(key, self.nensembles)
         indices = vbootstrap(keys, len(x_))
 
-        x_ = jnp.expand_dims(vmap(jnp.take, in_axes=(None, 0))(x_, indices), 2)
-        y_ = jnp.expand_dims(vmap(jnp.take, in_axes=(None, 0))(y_, indices), 2)
-
+        x_ = vmap(lambda x, index: x[index], in_axes=(None, 0))(x_, indices)
+        y_ = vmap(lambda x, index: x[index], in_axes=(None, 0))(y_, indices)
+       
         def train(params, opt_state, x, y):
-            prior = params["params"]["prior"]
             for _ in range(self.nepochs):
-                params = frozen_dict.freeze(
-                    {"params": {"prior": prior,
-                                "trainable": params["params"]["trainable"]
-                                }
-                     })
+                print(x.shape)
                 loss, grads = self.value_and_grad_fn(params, x, y)
                 updates, opt_state = self.optimizer.update(grads, opt_state)
                 params = optax.apply_updates(params, updates)
-
-            params = frozen_dict.freeze(
-                {"params": {"prior": prior,
-                            "trainable": params["params"]["trainable"]
-                            }
-                 })
             return params, opt_state
 
         vtrain = vmap(train, in_axes=(0, 0, 0, 0))
-        params, opt_states, = vtrain(belief.params, belief.opt_states, x_, y_)
+        params, opt_states = vtrain(belief.params, belief.opt_states, x_, y_)
 
-        return BeliefState(params, opt_states), Info()
+        return BeliefState(params, belief.prior, opt_states), Info()
 
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):
         sample_key, key = random.split(key)
         index = random.randint(sample_key, (), 0, self.nensembles)
-        params = tree_map(lambda x: x[index], belief.params)
+        params = tree_map(lambda prior, params: self.beta * prior[index] + params[index],
+                          belief.prior, 
+                          belief.params)
         return params

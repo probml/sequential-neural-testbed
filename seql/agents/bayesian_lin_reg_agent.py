@@ -1,7 +1,4 @@
-from jax import config
 from seql.agents.agent_utils import Memory
-
-config.update('jax_default_matmul_precision', 'float32')
 
 import jax.numpy as jnp
 
@@ -43,8 +40,6 @@ class BayesianReg(Agent):
                belief: BeliefState,
                x: chex.Array,
                y: chex.Array) -> Tuple[BeliefState, Info]:
-
-        assert self.buffer_size >= len(x)
 
         x_, y_ = self.memory.update(x, y)
         Sigma0_inv = jnp.linalg.inv(belief.Sigma)

@@ -56,6 +56,7 @@ class BlackJaxNutsAgent(Agent):
                  nwarmup: int,
                  logprior: LogpriorFn = lambda params: 0.,
                  nlast: int = 10,
+                 step_between_params: int = 1,
                  buffer_size: int = 0,
                  min_n_samples: int = 1,
                  obs_noise: float = 0.1,
@@ -88,6 +89,7 @@ class BlackJaxNutsAgent(Agent):
 
         self.nwarmup = nwarmup
         self.nlast = nlast
+        self.step_between_params = step_between_params
         self.nsamples = nsamples
         self.obs_noise = obs_noise
         self.buffer_size = buffer_size
@@ -138,13 +140,19 @@ class BlackJaxNutsAgent(Agent):
                                        state,
                                        self.nsamples)
 
+        indices = jnp.arange(1, self.nlast + 1, self.step_between_params)
+        samples = tree_map(lambda x, index: x[-index],
+                           states.position, indices)
+
         belief_state = BeliefState(final,
                                    step_size,
                                    inverse_mass_matrix,
-                                   tree_map(lambda x: x[-self.nlast:], states))
+                                   samples)
         return belief_state, Info()
 
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):
-        return tree_map(lambda x: x.mean(axis=0), belief.samples.position)
+        
+        index = random.choice(key, jnp.arange(self.nlast))
+        return tree_map(lambda x: x[index], belief.samples)

@@ -1,8 +1,4 @@
 # Kalman filter agent
-from jax import config
-
-config.update('jax_default_matmul_precision', 'float32')
-
 import jax.numpy as jnp
 
 import distrax
@@ -48,13 +44,17 @@ class KalmanFilterRegAgent(Agent):
                x: chex.Array,
                y: chex.Array):
         *_, input_dim = x.shape
+        *_, output_dim = y.shape
 
         A = jnp.eye(input_dim)
         Q = 0
         C = lambda t: x[t][None, ...]
         R = self.obs_noise * jnp.ones((1, 1))
+        
 
-        lds = LDS(A, C, Q, R, belief.mu, belief.Sigma)
+        lds = LDS(A, C, Q, R,
+                 jnp.squeeze(belief.mu),
+                 belief.Sigma)
 
         mu, Sigma, _, _ = kalman_filter(lds,
                                         y,
@@ -62,9 +62,10 @@ class KalmanFilterRegAgent(Agent):
         if self.return_history:
             history = (mu, Sigma)
             mu, Sigma = mu[-1], Sigma[-1]
+            mu = mu.reshape((-1, output_dim))
             return BeliefState(mu, Sigma), Info(*history)
-
-        return BeliefState(mu.reshape((-1, 1)), Sigma), Info()
+        
+        return BeliefState(mu.reshape((-1, output_dim)), Sigma), Info()
 
     def get_posterior_cov(self,
                           belief: BeliefState,
@@ -78,7 +79,7 @@ class KalmanFilterRegAgent(Agent):
                       key: chex.PRNGKey,
                       belief: BeliefState):
         mu, Sigma = belief.mu, belief.Sigma
-        mvn = distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu, axis=-1),
+        mvn = distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu),
                                                        Sigma)
         theta = mvn.sample(seed=key).reshape(mu.shape)
         return theta
