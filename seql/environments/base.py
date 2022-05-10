@@ -2,16 +2,74 @@ import jax.numpy as jnp
 from jax import random, jit, nn, vmap
 
 import haiku as hk
+import distrax
+import neural_tangents as nt
 
 import chex
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 from sklearn.preprocessing import PolynomialFeatures
 
 from seql.environments.sequential_classification_env import SequentialClassificationEnvironment
 from seql.environments.sequential_regression_env import SequentialRegressionEnvironment
 from seql.environments.sequential_torch_env import SequentialTorchEnvironment
+from seql.experiments.base import PriorKnowledge
 
+
+"""Specific neural tangent kernels."""
+
+import dataclasses
+
+from neural_tangents import stax
+from neural_tangents._src.utils import typing as nt_types
+import numpy as np
+import typing_extensions
+
+
+class KernelCtor(typing_extensions.Protocol):
+  """Interface for generating a kernel for a given input dimension."""
+
+  def __call__(self, input_dim: int) -> nt_types.AnalyticKernelFn:
+    """Generates a kernel for a given input dimension."""
+
+
+@dataclasses.dataclass
+class MLPKernelCtor(KernelCtor):
+  """Generates a GP kernel corresponding to an infinitely-wide MLP."""
+  num_hidden_layers: int
+  activation: nt_types.InternalLayer
+
+  def __post_init__(self):
+    assert self.num_hidden_layers >= 1, 'Must have at least one hidden layer.'
+
+  def __call__(self, input_dim: int = 1) -> nt_types.AnalyticKernelFn:
+    """Generates a kernel for a given input dimension."""
+    limit_width = 50  # Implementation detail of neural_testbed, unused.
+    layers = [
+        stax.Dense(limit_width, W_std=1, b_std=1 / np.sqrt(input_dim))
+    ]
+    for _ in range(self.num_hidden_layers - 1):
+      layers.append(self.activation)
+      layers.append(stax.Dense(limit_width, W_std=1, b_std=0))
+    layers.append(self.activation)
+    layers.append(stax.Dense(1, W_std=1, b_std=0))
+    _, _, kernel = stax.serial(*layers)
+    return kernel
+
+
+def make_benchmark_kernel(input_dim: int = 1) -> nt_types.AnalyticKernelFn:
+  """Creates the benchmark kernel used in leaderboard = 2-layer ReLU."""
+  kernel_ctor = MLPKernelCtor(num_hidden_layers=2, activation=stax.Relu())
+  return kernel_ctor(input_dim)
+
+
+def make_linear_kernel(input_dim: int = 1) -> nt_types.AnalyticKernelFn:
+  """Generate a linear GP kernel for testing putposes."""
+  layers = [
+      stax.Dense(1, W_std=1, b_std=1 / np.sqrt(input_dim)),
+  ]
+  _, _, kernel = stax.serial(*layers)
+  return kernel
 
 def make_gaussian_sampler(loc: Union[chex.Array, float],
                           scale: Union[chex.Array, float]):
@@ -82,6 +140,26 @@ def make_bimodel_sampler(mixing_parameter: float,
     return bimodel_sampler
 
 
+def make_mixture_of_gaussians_sampler(loc: chex.Array,
+                                      scale: chex.Array,
+                                      probs: Optional[chex.Array]=None):
+    assert len(loc) == len(scale)
+    ngaussians = loc.size
+    if probs is None:
+        probs = jnp.ones((ngaussians,)) / ngaussians
+    probs = probs
+    mixture_dist = distrax.Categorical(probs=probs)
+    components_dist = distrax.Normal(loc=loc, scale=scale)
+    dist = distrax.MixtureSameFamily(mixture_dist,
+                                     components_dist)
+
+    def mixture_of_gaussians_sampler(key: chex.PRNGKey,
+                                     shape: Tuple) -> chex.Array:
+        return dist.sample(seed=key, sample_shape=shape)
+
+    return mixture_of_gaussians_sampler
+
+
 def make_sin_wave_regression_environment(key: chex.PRNGKey,
                                          ntrain: int,
                                          ntest: int,
@@ -92,7 +170,7 @@ def make_sin_wave_regression_environment(key: chex.PRNGKey,
                                          x_test_generator: Callable = random.normal,
                                          bias: bool = True,
                                          shuffle: bool = False):
-    train_key, test_key, noise_key, env_key = random.split(key, 4)
+    train_key, test_key, noise_key, y_key, env_key = random.split(key, 4)
     X_train = x_train_generator(train_key, (ntrain, 1))
     X_test = x_test_generator(test_key, (ntest, 1))
 
@@ -136,7 +214,6 @@ def make_sin_wave_regression_environment(key: chex.PRNGKey,
                                           classification=False,
                                           obs_noise=obs_noise,
                                           key=env_key)
-
     return env
 
 
@@ -199,11 +276,19 @@ def make_random_poly_classification_environment(key: chex.PRNGKey,
                                               y_test,
                                               true_model,
                                               train_batch_size,
-                                              test_batch_size,
                                               logprobs=logprobs,
                                               key=env_key)
 
-    return env
+    prior_knowledge = PriorKnowledge(nfeatures,
+                                     ntrain,
+                                     1,
+                                     nclasses,
+                                     None,
+                                     obs_noise,
+                                     1.,
+                                     )
+
+    return prior_knowledge, env
 
 
 def make_random_poly_regression_environment(key: chex.PRNGKey,
@@ -214,11 +299,14 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
                                             obs_noise: float = 0.01,
                                             train_batch_size: int = 1,
                                             test_batch_size: int = 1,
+                                            kernel_ridge: float = 1e-6,
                                             x_train_generator: Callable = random.normal,
                                             x_test_generator: Callable = random.normal,
+                                            ntk: bool = False,
                                             shuffle: bool = False):
     
-    train_key, test_key, w_key = random.split(key, 3)
+    train_key, test_key, y_key, noise_key = random.split(key, 4)
+
     X_train = x_train_generator(train_key, (ntrain, 1))
     X_test = x_test_generator(test_key, (ntest, 1))
 
@@ -230,21 +318,35 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
     poly = PolynomialFeatures(degree)
     Phi = jnp.array(poly.fit_transform(X), dtype=jnp.float32)
 
-    D = Phi.shape[-1]
-    w = random.normal(w_key, (D, nout))
-    Y = Phi @ w 
+    N = ntrain + ntest
+    get_kernel = 'ntk' if ntk else 'nngp'
+    input_dim = X.shape[-1]
+    kernel_fn = make_linear_kernel(input_dim)
+    kernel = kernel_fn(X, x2=None, get=get_kernel)
+    kernel += kernel_ridge * jnp.eye(len(kernel))
+    mean = jnp.zeros((N,), dtype=jnp.float32)
+    y_function = random.multivariate_normal(y_key, mean, kernel)
+    print(y_function)
+    chex.assert_shape(y_function[:ntrain], [ntrain,])
 
-    if obs_noise > 0.0:
-        obs_key, key = random.split(key)
-        nsamples = ntrain + ntest
-        noise = random.normal(obs_key, (nsamples, nout)) * obs_noise
-        Y = Y + noise
+    # Form the training data
+    y_noise = random.normal(noise_key, [ntrain, 1]) * obs_noise
+    y_train = y_function[:ntrain, None] + y_noise
 
     X_train = Phi[:ntrain]
     X_test = Phi[ntrain:]
 
-    y_train = Y[:ntrain]
-    y_test = Y[ntrain:]
+
+    # Form the posterior prediction at cached test data
+    predict_fn = nt.predict.gradient_descent_mse_ensemble(
+        kernel_fn, X_train, y_train, diag_reg=(obs_noise))
+    _test_mean, _test_cov = predict_fn(
+        t=None, x_test=X_test, get='nngp', compute_cov=True)
+    _test_cov += kernel_ridge * jnp.eye(ntest)
+
+    chex.assert_shape(_test_mean, [ntest, 1])
+    chex.assert_shape(_test_cov, [ntest, ntest])
+    
 
     if shuffle:
         train_key, test_key = random.split(key)
@@ -257,19 +359,15 @@ def make_random_poly_regression_environment(key: chex.PRNGKey,
         y_train = y_train[train_indices]
 
         X_test = X_test[test_indices]
-        y_test = y_test[test_indices]
-
-
-    def true_model(x):
-        return x @ w
 
     env = SequentialRegressionEnvironment(X_train,
                                           y_train,
                                           X_test,
-                                          y_test,
-                                          true_model,
+                                          _test_mean,
+                                          _test_cov,
+                                          None,
+                                          y_function,
                                           train_batch_size,
-                                          test_batch_size,
                                           obs_noise=obs_noise)
 
     return env
@@ -484,7 +582,6 @@ def make_classification_mlp_environment(key: chex.PRNGKey,
     X_train = X[:ntrain]
     X_test = X[ntrain:]
     y_train = Y[:ntrain]
-    y_test = Y[ntrain:]
 
     if shuffle:
         env_key, key = random.split(key)
@@ -494,13 +591,20 @@ def make_classification_mlp_environment(key: chex.PRNGKey,
     env = SequentialClassificationEnvironment(X_train,
                                               y_train,
                                               X_test,
-                                              y_test,
                                               y_predictor,
                                               train_batch_size,
-                                              test_batch_size,
                                               logprobs=train_logits,
                                               key=env_key)
-    return env
+    
+    prior_knowledge = PriorKnowledge(nfeatures,
+                                     ntrain,
+                                     1,
+                                     ntargets,
+                                     None,
+                                     0.,
+                                     1.,
+                                     )
+    return prior_knowledge, env
 
 
 def make_regression_mlp_environment(key: chex.PRNGKey,

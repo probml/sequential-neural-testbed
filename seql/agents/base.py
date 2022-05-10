@@ -81,9 +81,8 @@ class Agent:
         mu = self.model_fn(params, x)
 
         # n test examples, dimensionality of output
-        ntest, output_dim = jnp.shape(mu)
-        pred_dist = distrax.MultivariateNormalDiag(mu,
-                                                   self.obs_noise * jnp.ones((ntest, output_dim)))
+        ntest = len(mu)
+        pred_dist = distrax.MultivariateNormalDiag(mu, self.obs_noise * jnp.eye((ntest)))
 
         return pred_dist
 

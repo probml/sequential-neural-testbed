@@ -118,9 +118,8 @@ def run_experiment(key: chex.PRNGKey,
         params = initialize_params(agent_name, **init_kwargs)
         belief = agent.init_state(*params)
 
-        partial_callback = lambda **kwargs: callback_fn(agent,
-                                                        env(train_batch_size),
-                                                        agent_name,
+        partial_callback = lambda **kwargs: callback_fn(
+                                                        agent_name=agent_name,
                                                         fig=fig,
                                                         nrows=nrows,
                                                         ncols=ncols,
@@ -141,9 +140,8 @@ def run_experiment(key: chex.PRNGKey,
 
         if batch_agents_included:
             batch_agent = init_kwargs["batch_agents"][agent_name]
-            partial_callback = lambda **kwargs: callback_fn(agent,
-                                                            env(ntrain),
-                                                            agent_name,
+            partial_callback = lambda **kwargs: callback_fn(
+                                                            agent_name=agent_name,
                                                             fig=fig,
                                                             nrows=nrows,
                                                             ncols=ncols,

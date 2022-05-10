@@ -74,23 +74,21 @@ def make_nll_polyadic_calculator(
   """Returns a MetricCalculator that computes d_{KL}^{tau, kappa} metric."""
   assert tau % kappa == 0
  
-  def joint_ll_repeated(logits_labels: Tuple[chex.Array, chex.Array]) -> float:
+  def joint_ll_repeated(logits:chex.Array, labels:chex.Array) -> float:
     """Calculates joint NLL evaluated on anchor points repeated tau / kappa."""
     # Shape checking
-    logits, labels = logits_labels
     chex.assert_shape(logits, [kappa, None])
     chex.assert_shape(labels, [kappa, 1])
  
     # Compute log-likehood, and then multiply by tau / kappa repeats.
-    probs = nn.softmax(logits)
+    probs = nn.softmax(logits, axis=-1)
     ll = categorical_log_likelihood(probs, labels)
     num_repeat = tau / kappa
     return ll * num_repeat
  
-  def enn_nll(logits_labels: Tuple[chex.Array, chex.Array]) -> float:
+  def enn_nll(logits:chex.Array, labels:chex.Array) -> float:
     """Averages NLL over multiple ENN samples."""
     # Shape checking
-    logits, labels = logits_labels
     chex.assert_shape(logits, [None, kappa, None])
     chex.assert_shape(labels, [kappa, 1])
     batched_labels = jnp.repeat(labels[None], logits.shape[0], axis=0)

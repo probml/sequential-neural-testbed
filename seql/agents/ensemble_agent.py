@@ -4,16 +4,16 @@ from jax import jit, value_and_grad, random, vmap, tree_map
 import optax
 
 import chex
+from flax.core import frozen_dict
 import typing_extensions
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import warnings
 
 from seql.agents.agent_utils import Memory
 from seql.agents.base import Agent, LoglikelihoodFn, LogpriorFn
 
-Params = chex.ArrayTree
-Prior = chex.ArrayTree
+Params = Any
 Optimizer = NamedTuple
 
 
@@ -41,7 +41,6 @@ class LossFn(typing_extensions.Protocol):
 
 class BeliefState(NamedTuple):
     params: Params
-    prior: Prior
     opt_states: TraceState
 
 
@@ -77,36 +76,45 @@ class EnsembleAgent(Agent):
         assert min_n_samples <= buffer_size
 
         self.memory = Memory(buffer_size)
-        self.model_fn = model_fn
+
+        self.beta = beta
+
+        def ensemble_model_fn(variables, x):
+
+            trainable = variables["params"]["trainable"]
+            baseline = variables["params"]["baseline"]
+            return self.beta * model_fn(baseline, x) + model_fn(trainable, x)
+
+        self.model_fn = ensemble_model_fn
 
         def loss_fn(params: Params,
                  x: chex.Array,
                  y: chex.Array):
-
-            ll = loglikelihood(params,
+            ll =  loglikelihood(params,
                                 x, y,
-                                model_fn)
-            lp = logprior(params)
+                                self.model_fn)
+            lp = logprior(params["params"]["trainable"])
+            lp += logprior(params["params"]["trainable"])
             return -(ll + lp)
 
         self.loss_fn = loss_fn
+
+
         self.loglikelihood = loglikelihood
         self.logprior = logprior
-
         self.value_and_grad_fn = jit(value_and_grad(self.loss_fn))
         self.nensembles = nensembles
         self.optimizer = optimizer
         self.buffer_size = buffer_size
-        self.beta = beta
         self.nepochs = nepochs
         self.min_n_samples = min_n_samples
         self.obs_noise = obs_noise
+        
 
     def init_state(self,
-                   params: Params,
-                   prior: Prior):
+                   params: Params):
         opt_states = vmap(self.optimizer.init)(params)
-        return BeliefState(params, prior, opt_states)
+        return BeliefState(params, opt_states)
 
     def update(self,
                key: chex.PRNGKey,
@@ -116,7 +124,7 @@ class EnsembleAgent(Agent):
 
         assert self.buffer_size >= len(x)
         x_, y_ = self.memory.update(x, y)
-        
+
         if len(x_) < self.min_n_samples:
             warnings.warn("There should be more data.", UserWarning)
             info = Info(False, -1, jnp.inf)
@@ -127,28 +135,39 @@ class EnsembleAgent(Agent):
         keys = random.split(key, self.nensembles)
         indices = vbootstrap(keys, len(x_))
 
-        x_ = vmap(lambda x, index: x[index], in_axes=(None, 0))(x_, indices)
-        y_ = vmap(lambda x, index: x[index], in_axes=(None, 0))(y_, indices)
-       
+
+        take_fn = lambda x, index: x[index]
+        x_ = vmap(take_fn, in_axes=(None, 0))(x_, indices)
+        y_ = vmap(take_fn, in_axes=(None, 0))(y_, indices)
+
         def train(params, opt_state, x, y):
+            baseline = params["params"]["baseline"]
             for _ in range(self.nepochs):
-                print(x.shape)
+                params = frozen_dict.freeze(
+                    {"params": {"baseline": baseline,
+                                "trainable": params["params"]["trainable"]
+                                }
+                     })
                 loss, grads = self.value_and_grad_fn(params, x, y)
                 updates, opt_state = self.optimizer.update(grads, opt_state)
                 params = optax.apply_updates(params, updates)
+
+            params = frozen_dict.freeze(
+                {"params": {"baseline": baseline,
+                            "trainable": params["params"]["trainable"]
+                            }
+                 })
             return params, opt_state
 
         vtrain = vmap(train, in_axes=(0, 0, 0, 0))
-        params, opt_states = vtrain(belief.params, belief.opt_states, x_, y_)
+        params, opt_states, = vtrain(belief.params, belief.opt_states, x_, y_)
 
-        return BeliefState(params, belief.prior, opt_states), Info()
+        return BeliefState(params, opt_states), Info()
 
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):
         sample_key, key = random.split(key)
         index = random.randint(sample_key, (), 0, self.nensembles)
-        params = tree_map(lambda prior, params: self.beta * prior[index] + params[index],
-                          belief.prior, 
-                          belief.params)
+        params = tree_map(lambda x: x[index], belief.params)
         return params

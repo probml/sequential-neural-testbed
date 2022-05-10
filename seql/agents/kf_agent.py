@@ -67,14 +67,6 @@ class KalmanFilterRegAgent(Agent):
         
         return BeliefState(mu.reshape((-1, output_dim)), Sigma), Info()
 
-    def get_posterior_cov(self,
-                          belief: BeliefState,
-                          x: chex.Array):
-        n = len(x)
-        posterior_cov = x @ belief.Sigma @ x.T + self.obs_noise * jnp.eye(n)
-        chex.assert_shape(posterior_cov, [n, n])
-        return posterior_cov
-
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):

@@ -1,3 +1,6 @@
+from jax.config import config
+config.update("jax_debug_nans", True)
+
 import jax.numpy as jnp
 from jax import lax, random
 
@@ -58,7 +61,7 @@ def categorical_log_likelihood(logprobs: chex.Array,
 def gaussian_log_likelihood(mu: chex.Array,
                             cov: chex.Array,
                             predictions) -> float:
-    return jnp.sum(distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu, axis=-1), cov).log_prob(predictions))
+    return jnp.sum(distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu), cov).log_prob(predictions))
 
 
 def mean_squared_error(params: chex.ArrayTree,
@@ -85,29 +88,18 @@ def train(key: chex.PRNGKey,
     keys = random.split(key, nsteps)
 
     for t, rng_key in enumerate(keys):
-        X_train, Y_train, X_test, Y_test = env.get_data(t)
-        print(X_train.shape)
-        update_key, data_key, joint_key = random.split(rng_key, 3)
-
+        X_train, Y_train = env.get_data(t)
+        
+        update_key, joint_key = random.split(rng_key, 2)
 
         belief, info = agent.update(update_key,
                                     belief,
                                     X_train,
                                     Y_train)
+
         
-
-        (X_joint, Y_joint), true_ll = env.get_joint_data(data_key,
-                                                         nsamples_input,
-                                                         njoint)
-
-        logjoints = agent.joint_logprob_given_belief(joint_key,
-                                                belief,
-                                                X_joint,
-                                                Y_joint,
-                                                nsamples_output)
-
-        kl_div = gaussian_sample_kl(logjoints, true_ll)
-
+        '''kl_div = env.evaluate_quality(joint_key, agent, belief, 2)
+        print(kl_div)'''
         if callback:
             if not isinstance(callback, list):
                 callback_list = [callback]
@@ -116,15 +108,13 @@ def train(key: chex.PRNGKey,
 
             for f in callback_list:
                 f(
+                    agent=agent,
+                    env=env,
                     belief=belief,
                     info=info,
                     X_train=X_train,
                     Y_train=Y_train,
-                    X_test=X_test,
-                    Y_test=Y_test,
-                    X_joint=X_joint,
-                    Y_joint=Y_joint,
-                    kl=kl_div,
+                    #kl=kl_div,
                     t=t
                 )
 

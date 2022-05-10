@@ -91,9 +91,11 @@ class SGLDAgent(Agent):
         final = tree_map(lambda x: x[-1],
                            samples)
 
+        '''
+        TODO: 
         indices = jnp.arange(1, self.nlast + 1, self.step_between_params)
         samples = tree_map(lambda x, index: x[-index],
-                           samples, indices)
+                           samples, indices)'''
   
         return BeliefState(final, samples, sampler), Info
 

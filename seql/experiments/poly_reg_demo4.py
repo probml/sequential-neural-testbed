@@ -1,10 +1,9 @@
 import jax.numpy as jnp
-from jax import random, nn, tree_map
-from numpy import indices, kaiser
+from jax import random, nn
 
 import optax
 from jaxopt import ScipyMinimize
-from flax.core import frozen_dict
+
 from matplotlib import pyplot as plt
 from sklearn.preprocessing import PolynomialFeatures
 from seql.agents.base import Agent
@@ -29,6 +28,7 @@ plt.style.use("seaborn-poster")
 
 
 def model_fn(w, x):
+    print(w.shape, x.shape)
     return x @ w
 
 def logprior_fn(params):
@@ -39,11 +39,12 @@ def loglikelihood_fn(params, x, y, model_fn):
     return -mean_squared_error(params, x, y, model_fn)
 
 
-def callback_fn(**kwargs):
+def callback_fn(agent: Agent,
+                env: SequentialDataEnvironment,
+                agent_name: str,
+                **kwargs):
 
-    agent, env = kwargs["agent"], kwargs["env"]
     timesteps = kwargs["timesteps"]
-    agent_name = kwargs["agent_name"]
 
     if "subplot_idx" not in kwargs and kwargs["t"] not in kwargs["timesteps"]:
         return
@@ -70,9 +71,14 @@ def callback_fn(**kwargs):
                          subplot_idx)
     belief = kwargs["belief"]
 
-    
-    X_test, y_test, _ = sort_data(env.X_train[:t+1],
-                                   env.y_train[:t+1])
+    X_line = jnp.linspace(-1.2, 1.2, 1000)
+    poly = PolynomialFeatures(3)
+    phi = jnp.array(poly.fit_transform(X_line.reshape((-1, 1))), dtype=jnp.float32)
+
+
+    #phi = env.X_test[:t+1]
+    X_test, _ = sort_data(phi, phi)
+    outputs = env.true_model(X_test)
 
     outs = agent.posterior_predictive_mean_and_var(random.PRNGKey(0),
                                                    belief,
@@ -80,10 +86,11 @@ def callback_fn(**kwargs):
                                                    200,
                                                    100)
     plot_regression_posterior_predictive(ax,
-                                         env.X_train[:t+1],
-                                         env.y_train[:t+1],
+                                         env.X_test,
+                                         env.y_test,
                                          X_test[:, 1],
                                          outs,
+                                         outputs,
                                          agent_name,
                                          t=t)
     if "title" in kwargs:
@@ -104,14 +111,10 @@ def initialize_params(agent_name, **kwargs):
         Sigma0 = jnp.eye(nfeatures)
         initial_params = (mu0, Sigma0)
     elif agent_name =="ensemble":
-        initializer = random.normal
-        trainable = initializer(random.PRNGKey(0), (8,  nfeatures, 1)) * 2.
-        baseline = initializer(random.PRNGKey(2), (8,  nfeatures, 1)) * 2.
-        initial_params = (frozen_dict.freeze(
-                    {"params": {"baseline": baseline,
-                                "trainable": trainable
-                                }
-                     }),)
+        initializer = nn.initializers.glorot_normal()
+        mu0 = initializer(random.PRNGKey(0), (8,  nfeatures, 1))
+        prior = initializer(random.PRNGKey(2), (8,  nfeatures, 1))
+        initial_params = (mu0, prior)
     else:
         initial_params = (mu0,)
 
@@ -135,7 +138,7 @@ def main():
     ntrain = 12
     ntest = 12
     batch_size = 3
-    obs_noise = 0.1
+    obs_noise = 1.
 
     env_key, run_key = random.split(key)
     env = lambda batch_size: make_random_poly_regression_environment(env_key,
@@ -151,7 +154,7 @@ def main():
 
     nsteps = 4
 
-    buffer_size = ntrain
+    buffer_size = 5
 
     kf = KalmanFilterRegAgent(obs_noise=obs_noise)
 
@@ -163,7 +166,7 @@ def main():
 
     optimizer = optax.adam(1e-1)
 
-    nepochs = 6
+    nepochs = 4
     sgd = SGDAgent(loglikelihood_fn,
                    model_fn,
                    logprior_fn,
@@ -177,10 +180,10 @@ def main():
                         logprior_fn,
                          optimizer=optimizer,
                          obs_noise=obs_noise,
-                         buffer_size=buffer_size,
+                         buffer_size=ntrain,
                          nepochs=nepochs * nsteps)
 
-    nsamples, nwarmup = 100, 50
+    nsamples, nwarmup = 500, 200
     nuts = BlackJaxNutsAgent(
         loglikelihood_fn,
         model_fn,
@@ -197,7 +200,7 @@ def main():
         nsamples=nsamples * nsteps,
         nwarmup=nwarmup,
         obs_noise=obs_noise,
-        buffer_size=buffer_size)
+        buffer_size=ntrain)
 
     dt = 1e-5
     sgld = SGLDAgent(
@@ -216,10 +219,10 @@ def main():
         model_fn,
         logprior=logprior_fn,
         dt=dt,
-        batch_size=batch_size,
+        batch_size=ntrain,
         nsamples=nsamples * nsteps,
         obs_noise=obs_noise,
-        buffer_size=buffer_size)
+        buffer_size=ntrain)
 
     # tau = 1.
     # strength = obs_noise / tau
@@ -229,6 +232,13 @@ def main():
                      logprior_fn,
                      obs_noise=obs_noise,
                      buffer_size=buffer_size)
+    
+    batch_bfgs = BFGSAgent(loglikelihood_fn,
+                    model_fn,
+                    logprior_fn,
+                    obs_noise=obs_noise,
+                    buffer_size=ntrain)
+
 
     def energy_fn(params, x, y):
         logprob = loglikelihood_fn(params, x, y, model_fn)
@@ -242,14 +252,21 @@ def main():
                         logprior_fn,
                         obs_noise=obs_noise,
                         buffer_size=buffer_size)
+
+    batch_laplace = LaplaceAgent(solver,
+                    loglikelihood_fn,
+                    model_fn,
+                    logprior_fn,
+                    obs_noise=obs_noise,
+                    buffer_size=ntrain)
+                    
     nensemble =  8
 
     ensemble = EnsembleAgent(loglikelihood_fn,
                              model_fn,
                              nensemble,
                              logprior_fn,
-                             nepochs,
-                             optimizer=optimizer)
+                             nepochs)
 
     agents = {
         
@@ -263,14 +280,13 @@ def main():
         "bfgs": bfgs,
     }
 
-
     batch_agents = {
         "ensemble": ensemble,
         "kf": kf,
         "exact bayes": batch_bayes,
         "sgd": batch_sgd,
-        "laplace": laplace,
-        "bfgs": bfgs,
+        "laplace": batch_laplace,
+        "bfgs": batch_bfgs,
         "nuts": batch_nuts,
         "sgld": batch_sgld,
     }

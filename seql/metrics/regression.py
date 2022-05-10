@@ -10,6 +10,7 @@ def gaussian_log_likelihood(mu: chex.Array,
                             predictions) -> float:
     return jnp.sum(distrax.MultivariateNormalFullCovariance(jnp.squeeze(mu, axis=-1), cov).log_prob(predictions))
 
+
 def gaussian_sample_kl(
                 sampled_ll: chex.Array,
                 true_ll: chex.Array) -> float:

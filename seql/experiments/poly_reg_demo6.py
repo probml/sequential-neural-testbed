@@ -1,6 +1,5 @@
 import jax.numpy as jnp
 from jax import random, nn, tree_map
-from numpy import indices, kaiser
 
 import optax
 from jaxopt import ScipyMinimize
@@ -38,62 +37,33 @@ def logprior_fn(params):
 def loglikelihood_fn(params, x, y, model_fn):
     return -mean_squared_error(params, x, y, model_fn)
 
+kls = []
+subplot_idx = 0
 
-def callback_fn(**kwargs):
-
-    agent, env = kwargs["agent"], kwargs["env"]
-    timesteps = kwargs["timesteps"]
-    agent_name = kwargs["agent_name"]
-
-    if "subplot_idx" not in kwargs and kwargs["t"] not in kwargs["timesteps"]:
-        return
+def callback_fn(agent: Agent,
+                env: SequentialDataEnvironment,
+                agent_name: str,
+                **kwargs):
+    global kls, subplot_idx
 
     nrows, ncols  = kwargs["nrows"], kwargs["ncols"]
-    t = kwargs["t"]
     
-    if "subplot_idx" not in kwargs:
-        subplot_idx = timesteps.index(t) + kwargs["idx"] * ncols + 1
-    else:
-        subplot_idx = kwargs["subplot_idx"]
 
-    fig = kwargs["fig"]
+    if kwargs["t"] == 0:
+        kls.append([])
+        subplot_idx += 1
 
-    '''if subplot_idx % ncols != 1:
-        ax = fig.add_subplot(nrows,
-                             ncols,
-                             subplot_idx,
-                             sharey=plt.gca(),
-                             sharex=plt.gca())
-    else:'''
-    ax = fig.add_subplot(nrows,
-                         ncols,
-                         subplot_idx)
-    belief = kwargs["belief"]
-
+    kls[-1].append(kwargs["kl"])
+    if kwargs["t"] == 9:
+        ax = kwargs["fig"].add_subplot(nrows,
+                                ncols,
+                                subplot_idx)
+        ax.plot(kls[-1])
+        ax.set_title(agent_name)
     
-    X_test, y_test, _ = sort_data(env.X_train[:t+1],
-                                   env.y_train[:t+1])
-
-    outs = agent.posterior_predictive_mean_and_var(random.PRNGKey(0),
-                                                   belief,
-                                                   X_test,
-                                                   200,
-                                                   100)
-    plot_regression_posterior_predictive(ax,
-                                         env.X_train[:t+1],
-                                         env.y_train[:t+1],
-                                         X_test[:, 1],
-                                         outs,
-                                         agent_name,
-                                         t=t)
-    if "title" in kwargs:
-        ax.set_title(kwargs["title"], fontsize=32)
-    else:
-        ax.set_title("t={}".format(t), fontsize=32)
-
     plt.tight_layout()
-    plt.savefig("jaks.png")
-    plt.show()
+    plt.savefig("ajsa.png")
+    
 
 
 def initialize_params(agent_name, **kwargs):
@@ -132,10 +102,10 @@ def main():
                                                     min_val=min_val)
 
     degree = 3
-    ntrain = 12
-    ntest = 12
-    batch_size = 3
-    obs_noise = 0.1
+    ntrain = 50
+    ntest = 50
+    batch_size = 5
+    obs_noise = 1.
 
     env_key, run_key = random.split(key)
     env = lambda batch_size: make_random_poly_regression_environment(env_key,
@@ -149,7 +119,7 @@ def main():
                                                                      x_test_generator=x_test_generator,
                                                                      shuffle=True)
 
-    nsteps = 4
+    nsteps = 10
 
     buffer_size = ntrain
 
@@ -180,7 +150,7 @@ def main():
                          buffer_size=buffer_size,
                          nepochs=nepochs * nsteps)
 
-    nsamples, nwarmup = 100, 50
+    nsamples, nwarmup = 500, 200
     nuts = BlackJaxNutsAgent(
         loglikelihood_fn,
         model_fn,
@@ -262,24 +232,11 @@ def main():
         "sgd": sgd,
         "bfgs": bfgs,
     }
-
-
-    batch_agents = {
-        "ensemble": ensemble,
-        "kf": kf,
-        "exact bayes": batch_bayes,
-        "sgd": batch_sgd,
-        "laplace": laplace,
-        "bfgs": bfgs,
-        "nuts": batch_nuts,
-        "sgld": batch_sgld,
-    }
-
     timesteps = list(range(nsteps))
 
-    nrows = len(agents)
-    ncols = len(timesteps) + 1
-    njoint = 10
+    nrows = 1
+    ncols = len(agents)
+    njoint = 1
     nsamples_input, nsamples_output = 1, 1
 
     run_experiment(run_key,
@@ -298,7 +255,7 @@ def main():
                    degree=degree,
                    obs_noise=obs_noise,
                    timesteps=timesteps,
-                   batch_agents=batch_agents
+                   figsize=(24, 6)
                    )
 
 

@@ -115,14 +115,6 @@ class SGDAgent(Agent):
 
         return BeliefState(params, opt_state), Info(loss)
 
-    def get_posterior_cov(self,
-                          belief: BeliefState,
-                          x: chex.Array):
-        n = len(x)
-        posterior_cov = self.obs_noise * jnp.eye(n)
-        chex.assert_shape(posterior_cov, [n, n])
-        return posterior_cov
-
     def sample_params(self,
                       key: chex.PRNGKey,
                       belief: BeliefState):

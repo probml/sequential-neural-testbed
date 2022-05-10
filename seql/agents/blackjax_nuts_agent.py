@@ -140,9 +140,14 @@ class BlackJaxNutsAgent(Agent):
                                        state,
                                        self.nsamples)
 
+        '''
+        TODO: Make it work for both a pytree and and array
         indices = jnp.arange(1, self.nlast + 1, self.step_between_params)
         samples = tree_map(lambda x, index: x[-index],
                            states.position, indices)
+        
+        '''
+        samples = states.position
 
         belief_state = BeliefState(final,
                                    step_size,
