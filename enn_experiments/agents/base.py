@@ -3,6 +3,9 @@ import chex
 import typing_extensions
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
+State = NamedTuple
+Info = NamedTuple
+
 
 @dataclasses.dataclass(frozen=True)
 class PriorKnowledge:
@@ -19,15 +22,23 @@ class PriorKnowledge:
     extra: Optional[Dict[str, Any]] = None
     is_regression: bool = True
 
-State = NamedTuple
-Info = NamedTuple
-
-class NutsState(NamedTuple):
+class IntegratorState(NamedTuple):
+    """State of the trajectory integration.
+    We keep the gradient of the potential energy to speedup computations.
     # https://github.com/blackjax-devs/blackjax/blob/fd83abf6ce16f2c420c76772ff2623a7ee6b1fe5/blackjax/mcmc/integrators.py#L12
+    """
     position: chex.ArrayTree
     momentum: chex.ArrayTree = None
     potential_energy: float = None
     potential_energy_grad: chex.ArrayTree = None
+    
+class NutsState(NamedTuple):
+    final: IntegratorState
+    samples: Optional[chex.ArrayTree] = None
+    
+class SGLDState(NamedTuple):
+    params: chex.ArrayTree
+    samples: Optional[chex.ArrayTree] = None
 
 class KernelFn(typing_extensions.Protocol):
     """A transition kernel used as the `update` of a `SamplingAlgorithms`.

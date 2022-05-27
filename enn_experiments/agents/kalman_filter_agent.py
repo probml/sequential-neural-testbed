@@ -18,6 +18,8 @@ from enn import losses
 
 from jsl.lds.kalman_filter import LDS, kalman_filter
 
+from enn_experiments.agents.utils import make_loss
+
 
 class TrainingState(NamedTuple):
     mu: chex.Array
@@ -28,15 +30,9 @@ class TrainingState(NamedTuple):
 class KalmanFilterConfig:
   """Config Class for Kalman filter."""
   prior_variance: float = 0.1  # Variance of Gaussian prior
-  alg_temperature: float = 1  # Temperature parameter for SGLD
-  momentum_decay: float = 0.9  # Momentum decay parameter for SGLD
-  preconditioner: str = 'None'  # Choice of preconditioner; None or RMSprop
-  num_batches: int = 500  # Number of total training steps
-  num_warmup: int = 100 # Burn in time for MCMC sampling
-  num_samples: int = 100 # Number of MCMC steps per each batch
+  num_batches: int = 1  # Number of total training steps
   seed: int = 0  # Initialization seed
   adaptive_prior_variance: bool = False  # Scale prior_variance with dimension
-
 
 
 class KalmanFilterExperiment(supervised_base.BaseExperiment):
@@ -88,7 +84,6 @@ class KalmanFilterExperiment(supervised_base.BaseExperiment):
         x, y = batch.x, batch.y
         
         *_, input_dim = x.shape
-        *_, output_dim = y.shape
         
         A = jnp.eye(input_dim)
         Q = 0
@@ -144,7 +139,7 @@ class KalmanFilterExperiment(supervised_base.BaseExperiment):
 def extract_enn_sampler(enn: enn_base.EpistemicNetwork, 
                         mu: chex.Array,
                         sigma: chex.Array) -> EpistemicSampler:
-  """ENN sampler for MCMC."""
+  """ENN sampler for Kalman Filter agent."""
   
   def enn_sampler(x: enn_base.Array, key: chex.PRNGKey) -> enn_base.Array:
     """Generate a random sample from posterior distribution at x."""
@@ -190,22 +185,7 @@ def make_kalman_filter_enn(prior: PriorKnowledge) -> enn_base.EpistemicNetwork:
 def make_kalman_filter_agent(config: KalmanFilterConfig, prior: PriorKnowledge):
   """Factory method to create a Kalman filter agent."""
 
-  def make_loss(prior) -> enn_base.LossFn:
-    
-    # L2 loss on perturbed outputs 
-    single_loss = losses.L2Loss()
-    loss_fn = losses.average_single_index_loss(single_loss, 1)
-
-    # Gaussian prior can be interpreted as a L2-weight decay.
-    prior_variance = config.prior_variance
-    
-    # Scale prior_variance for large input_dim
-    if config.adaptive_prior_variance and prior.input_dim >= 100:
-      prior_variance *= 2
-
-    scale = (1 / prior_variance) * prior.input_dim / prior.num_train
-    loss_fn = losses.add_l2_weight_decay(loss_fn, scale=scale)
-    return loss_fn
+  assert prior.is_regression == True
 
   log_freq = int(config.num_batches / 50) or 1
 
@@ -218,7 +198,7 @@ def make_kalman_filter_agent(config: KalmanFilterConfig, prior: PriorKnowledge):
     # Define the experiment
     kalman_experiment = KalmanFilterExperiment(
         enn=make_kalman_filter_enn(prior),
-        loss_fn=make_loss(prior),
+        loss_fn=make_loss(config, prior),
         dataset=dataset, #batch_size=100),
         train_log_freq=log_freq,
     )

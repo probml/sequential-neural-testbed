@@ -7,6 +7,7 @@ from typing import Callable, Tuple, Union
 import numpy as np
 import pandas as pd
 import plotnine as gg
+from plotnine import ggsave
 from sklearn.preprocessing import PolynomialFeatures
 
 import neural_tangents as nt
@@ -161,26 +162,30 @@ def make_plot_data(sampler: EpistemicSampler,
                    num_sample: int = 20) -> pd.DataFrame:
   """Generate a panda dataframe with sampled predictions."""
   data = []
-  keys = random.split(keys, num_sample)
+  key = random.PRNGKey(0)
+  keys = random.split(key, num_sample)
   for k, key in enumerate(keys):
     preds_y = sampler(preds_x, key=key)
+    print(preds_y)
     data.append(pd.DataFrame({'x': preds_x[:, 1], 'y': preds_y, 'k': k}))
   plot_df = pd.concat(data)
   return plot_df
 
 def make_plot(sampler,
+              preds_x: chex.Array,
               training_data: Tuple[chex.Array, chex.Array],
               num_sample: int = 20) -> gg.ggplot:
   """Generate a regression plot with sampled predictions."""
   
   plot_df = make_plot_data(
-      sampler, num_sample=num_sample)
+      sampler, preds_x, num_sample=num_sample)
 
   p = (gg.ggplot()
        + gg.aes('x', 'y')
        + gg.geom_point(data=make_regression_df(*training_data), size=3, colour='blue')
        + gg.geom_line(gg.aes(group='k'), data=plot_df, alpha=0.5)
       )
+  ggsave(plot=p, filename='test.png', dpi=300)
 
   return p
 
@@ -224,11 +229,11 @@ def main():
     kalman_agent = make_kalman_filter_agent(KalmanFilterConfig, prior)
     sampler = kalman_agent(dataset)
     
-    preds_x = np.linspace(-0.5, 2).reshape((-1, 1))
+    preds_x = np.linspace(-1., 2.).reshape((-1, 1))
     preds_x = PolynomialFeatures(degree).fit_transform(preds_x)
 
 
-    p = make_plot(sampler, train_data)
+    p = make_plot(sampler, preds_x, train_data)
     _ = p.draw()
     
 if __name__ =="__main__":
